@@ -1,0 +1,112 @@
+# Dark Mode++ Top 100 测试结果
+
+身份列（站点 / URL / 批次 / 预期主题）已填。批次 1–10（1–100）已回填。全球 Top 100 测完，不再开第 11 批。
+
+预期主题 = 未登录默认首屏，不是系统深浅色。
+
+填写建议：实际首屏 `浅色/深色/混合`；白闪 / 遮罩卡住 / 二次闪 / 挡住交互 / 脚本报错 `是/否`；遮罩颜色 `浅/深/错色/无`；结论 `通过/失败/跳过/待测`。
+
+| # | 站点 | URL | 批次 | 预期主题 | 实际首屏 | 白闪 | 遮罩颜色 | 遮罩卡住 | 二次闪 | 挡住交互 | 脚本报错 | 结论 | 截图 | 备注 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | google.com | https://www.google.com/ | 1 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 01-google-overlay.png；01-google-complete.png | 未登录但 Helium 系统深色，实际深色 Google。遮罩 #121212 对齐，无白闪。 |
+| 2 | youtube.com | https://www.youtube.com/ | 1 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 02-youtube-overlay.png；02-youtube-complete.png | 遮罩 #121212，完成后深色未登录首页。 |
+| 3 | facebook.com | https://www.facebook.com/ | 1 | 浅色 | 浅色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 03-facebook-complete.png；03-facebook-reload.png | 浅色登录墙。连拍未见深遮罩；浅色遮罩在白底上几乎看不见。 |
+| 4 | instagram.com | https://www.instagram.com/ | 1 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 04-instagram-overlay.png；04-instagram-complete.png | 预期浅色，实际深色 logo 闪屏（跟系统）。遮罩 #121212 对齐。 |
+| 5 | chatgpt.com | https://chatgpt.com/ | 1 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 05-chatgpt-overlay.png；05-chatgpt-complete.png | 遮罩 #121212，完成后近黑聊天 UI。 |
+| 6 | x.com | https://x.com/ | 1 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 06-x-complete.png；06-x-reload.png | 深色登录墙。连拍全程深色，无白闪。 |
+| 7 | reddit.com | https://www.reddit.com/ | 1 | 深色 | 浅色 | 否 | 无 | 否 | 是 | 否 | 否 | 通过 | 07-reddit-light.png；07-reddit-dark.png；07-reddit-complete.png | 未登录先浅后深。第一次连拍无 #121212，没有先盖黑证据。二次闪是站点切系统深色。 |
+| 8 | tiktok.com | https://www.tiktok.com/ | 1 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 08-tiktok-retest-overlay.png；08-tiktok-retest-complete.png | 1.0.0 失败（空 body 纯白，证据在 rdc-awf-batch01）。1.0.2 复测遮罩 #121212 等到深色登录墙，无 gray=255。只测墙。 |
+| 9 | whatsapp.com | https://www.whatsapp.com/ | 1 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 09-whatsapp-complete.png；09-whatsapp-white.png | 米色营销站。Reload 有一帧 #fff，浅色站上计为浅色遮罩。 |
+| 10 | bing.com | https://www.bing.com/ | 1 | 浅色 | 混合 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 10-bing-overlay.png；10-bing-complete.png | 实际是深色摄影首页+白搜索框。Reload 先 #121212 再露出内容，无白闪。 |
+| 11 | wikipedia.org | https://www.wikipedia.org/ | 2 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 11-wikipedia-overlay.png；11-wikipedia-complete.png | 系统深色门户。Overlay #121212 对齐。未往搜索框打字。 |
+| 12 | yahoo.co.jp | https://www.yahoo.co.jp/ | 2 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 12-yahoo-co-jp-overlay.png；12-yahoo-co-jp-complete.png | 浅色 YAHOO! JAPAN。先 ERR_CONNECTION_CLOSED，重进后加载。Overlay #121212 再浅色。未搜索。 |
+| 13 | gemini.google.com | https://gemini.google.com/ | 2 | 未知 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 13-gemini-overlay.png；13-gemini-complete.png | 落地 /app 深色 SPA。仅右上角登录，不是整页墙。遮罩 #121212 对齐。 |
+| 14 | yandex.ru | https://yandex.ru/ | 2 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 14-yandex-overlay.png；14-yandex-complete.png | 跳到 dzen.ru 浅色信息流 + cookie 条。Overlay 白空壳是浅色站，不是深站白闪。未点 Понятно。 |
+| 15 | amazon.com | https://www.amazon.com/ | 2 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 15-amazon-overlay.png；15-amazon-complete.png | 仍是 amazon.com，中文 UI + 配送地址条。Overlay #121212 再浅色。未点关闭/更改地址，未搜索。 |
+| 16 | yahoo.com | https://www.yahoo.com/ | 2 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 16-yahoo-overlay.png；16-yahoo-complete.png | 系统深色新闻门户，不是 yahoo.co.jp。遮罩 #121212 对齐。debugger 暂停时 F8。 |
+| 17 | linkedin.com | https://www.linkedin.com/ | 2 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 17-linkedin-overlay.png；17-linkedin-complete.png | 浅色登录墙。Overlay #121212 再浅色。未登录。 |
+| 18 | cloud.microsoft | https://cloud.microsoft/ | 2 | 未知 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 18-cloud-microsoft-overlay.png；18-cloud-microsoft-complete.png | 落地 m365.cloud.microsoft/zh-hans/ Copilot/M365 登录墙。Enter 曾被抢；reload 抓到 #121212 再浅色墙。 |
+| 19 | baidu.com | https://www.baidu.com/ | 2 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 19-baidu-overlay.png；19-baidu-complete.png | 全球榜独立测。浅色首页。Overlay #121212 再浅。搜索框是占位，不是地址栏。 |
+| 20 | pinterest.com | https://www.pinterest.com/ | 2 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 20-pinterest-overlay.png；20-pinterest-complete.png | 浅色营销登录墙，不是 feed。Reload #121212 再浅色。无 gray=255。未搜索。 |
+| 21 | naver.com | https://www.naver.com/ | 3 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 21-naver-overlay.png；21-naver-complete.png | 韩语门户。Reload r05–r10 `#121212` 再浅色首页。未点浏览器更新弹窗，未搜索。 |
+| 22 | netflix.com | https://www.netflix.com/ | 3 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 22-netflix-overlay.png；22-netflix-complete.png | 未登录营销页。Reload 一帧纯黑 gray=0，无 gray=255。未点 Sign In / Get Started / Trending。 |
+| 23 | live.com | https://outlook.live.com/ | 3 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 23-outlook-overlay.png；23-outlook-complete.png | 先 outlook.live.com/mail/ 浅色 Outlook logo 闪屏，落地 microsoft.com/zh-cn/microsoft-365/outlook 营销墙。Overlay `#121212` 再浅。未点登录。未测 www.live.com。 |
+| 24 | bilibili.com | https://www.bilibili.com/ | 3 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 24-bilibili-overlay.png；24-bilibili-complete.png | 全球榜独立测。浅色首页。Overlay `#121212` 再浅。未进分区/播放。站点「白屏检测 status ok」不是脚本。 |
+| 25 | pornhub.com | https://www.pornhub.com/ | 3 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 25-pornhub-overlay.png；25-pornhub-complete.png | NSFW。跳 cn.pornhub.com 年龄墙。Overlay `#121212` 对齐。未点「我年满 18 岁」。 |
+| 26 | microsoft.com | https://www.microsoft.com/ | 3 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 26-microsoft-overlay.png；26-microsoft-complete.png | 落地 /en-us 浅色营销。Overlay `#121212` 再白空壳再内容。未往 Ask a question 打字，未点客服。 |
+| 27 | xhamster.com | https://xhamster.com/ | 3 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 27-xhamster-overlay.png；27-xhamster-complete.png | NSFW。未登录年龄墙。Reload 一帧纯黑 gray=0，无 gray=255。未点 I'm 18。 |
+| 28 | twitch.tv | https://www.twitch.tv/ | 3 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 28-twitch-overlay.png；28-twitch-complete.png | 深色浏览页 + Cookie 条。Overlay `#121212` 对齐。未进直播间，未点「继续」。Cookie 会抢 Enter。 |
+| 29 | temu.com | https://www.temu.com/ | 3 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 29-temu-overlay.png；29-temu-complete.png | 落地 **bgn_verification.html** 安全验证墙。Overlay `#121212` 约 3s 再灰底白卡。未滑拼图，未把地址贴进搜索框。 |
+| 30 | dzen.ru | https://dzen.ru/ | 3 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 30-dzen-overlay.png；30-dzen-complete.png | 直接 dzen.ru 浅色信息流，不是 Yandex 跳转。Reload 白空壳 gray=255 是浅色站。未往「Поиск Яндекса」打字。 |
+| 31 | claude.ai | https://claude.ai/ | 4 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 31-claude-overlay.png；31-claude-complete.png | 落地 **/login** 深色登录墙「追问未来」，不是浅米色。Overlay `#121212` 对齐。只测墙，未登录。FedCM/Datadog 是站点。 |
+| 32 | vk.ru | https://vk.ru/ | 4 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 32-vk-overlay.png；32-vk-complete.png | 测 vk.ru，不是 vk.com。深色 QR 登录墙。Overlay `#121212` 对齐。未登录。Crashlytics 是站点。 |
+| 33 | canva.com | https://www.canva.com/ | 4 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 33-canva-overlay.png；33-canva-complete.png | 落地 **/zh_cn/** 浅色营销+Cookie。Reload 白空壳 gray=255 是浅色站。未点登录/开始设计。VK 搜索曾抢 Enter。 |
+| 34 | weather.com | https://weather.com/ | 4 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 34-weather-overlay.png；34-weather-complete.png | 落地 **zh-CN/.../haizhou-district/today** 浅色天气+Cookie 墙。Overlay `#121212` 再浅。未点 Accept。s.w-x.co `ERR_CONNECTION_CLOSED` 是站点。 |
+| 35 | bet.br | https://bet.br/ | 4 | 未知 | 无 | 否 | 无 | 否 | 否 | 否 | 否 | 跳过 | 35-bet-br-error.png | Helium `ERR_CONNECTION_CLOSED`「无法访问此网站」。未改脚本、未换 URL。 |
+| 36 | xvideos.com | https://www.xvideos.com/ | 4 | 深色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 36-xvideos-overlay.png；36-xvideos-complete.png | NSFW。白年龄墙「只适合成年人」。Overlay `#121212` 再浅。未点「已满18岁」，未往下点。 |
+| 37 | news.yahoo.co.jp | https://news.yahoo.co.jp/ | 4 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 37-yahoo-news-overlay.png；37-yahoo-news-complete.png | 日语新闻门户，不是 yahoo.co.jp。Overlay `#121212` 再浅。未往搜索框打字。站点 `MEDIA_ERR_SRC_NOT_SUPPORTED`。 |
+| 38 | samsung.com | https://www.samsung.com/ | 4 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 38-samsung-overlay.png；38-samsung-complete.png | 落地 **/us/** 浅色 Samsung Week + Cookie。Overlay `#121212` 再浅。未点 Accept All。 |
+| 39 | stripchat.com | https://stripchat.com/ | 4 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 39-stripchat-overlay.png；39-stripchat-complete.png | NSFW。跳 **zh.stripchat.com** 深色年龄墙。无 gray=255。未点「年满18岁」，未进直播。beatrixcdn `ERR_CONNECTION_CLOSED` 是站点。 |
+| 40 | fandom.com | https://www.fandom.com/ | 4 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 40-fandom-overlay.png；40-fandom-complete.png | 浅色门户首页。Reload 白空壳 gray=255 是浅色站。未进子域 wiki，未往「搜寻」打字。fan.api 403 是站点。 |
+| 41 | globo.com | https://www.globo.com/ | 5 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 41-globo-overlay.png；41-globo-complete.png | 巴西葡语门户。Reload r07–r15 `#121212` 再浅色首页 + Cookie「Prosseguir」。未点 Prosseguir，未往 Busca 打字。站点 `ERR_CONNECTION_CLOSED`。 |
+| 42 | apple.com | https://www.apple.com/ | 5 | 浅色 | 混合 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 42-apple-overlay.png；42-apple-complete.png | 仍是 apple.com，无地区路径。英文首页上半 iPhone Duo 白底、下半 iPhone 18 Pro 黑带。Reload r02–r12 `#121212` 再浅英雄区。未点 Learn more / Buy。 |
+| 43 | mail.ru | https://mail.ru/ | 5 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 43-mailru-overlay.png；43-mailru-complete.png | 预期浅色，实际深色俄文门户 + Cookie「我们重视您的隐私」+ 定位条。Reload r08–r12 `#121212` 对齐深底。未点全部接受/定位，未往 Поиск 打字。站点 `ERR_CONNECTION_CLOSED`。 |
+| 44 | espn.com | https://www.espn.com/ | 5 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 44-espn-overlay.png；44-espn-complete.png | 深色体育首页。空标签 gray≈56 后 r19 `#121212` 再深色内容。无 gray=255。未点播放/比分。站点 `ERR_CONNECTION_CLOSED`。 |
+| 45 | duckduckgo.com | https://duckduckgo.com/ | 5 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 45-duckduckgo-overlay.png；45-duckduckgo-complete.png | 跟系统深色营销首页「改用 DuckDuckGo」。未往「隐私搜索」打字，未进 Duck.ai。空标签 gray≈56 后直接深页，无 gray=255。站点 `ERR_CONNECTION_CLOSED`。 |
+| 46 | brave.com | https://brave.com/ | 5 | 未知 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 46-brave-overlay.png；46-brave-complete.png | 测营销站，不是 Brave Search。浅色 “The browser that puts you first” + 语言条。Reload 白空壳是浅色站。未点 Get Brave / 切换中文，未往 Private search 打字。analytics.brave `ERR_CONNECTION_CLOSED` 是站点。 |
+| 47 | github.com | https://github.com/ | 5 | 未知 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 47-github-overlay.png；47-github-complete.png | 未登录首页。深蓝紫营销「The future of building happens together」。Reload r10–r14 `#121212` 对齐。未点 Sign in / Sign up，未往邮箱打字。站点 `ERR_CONNECTION_CLOSED`。 |
+| 48 | t.me | https://t.me/ | 5 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 48-tme-overlay.png；48-tme-complete.png | 无路径立刻跳 **telegram.org** 浅色营销。未手动改去 telegram.org。Reload 白空壳是浅色站。未点 Android / iPhone。 |
+| 49 | zoom.com | https://www.zoom.com/ | 5 | 浅色 | 混合 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 49-zoom-overlay.png；49-zoom-complete.png | 先测 zoom.com，落地 **zoom.com/zh-cn**，没有跳 zoom.us。深蓝营销+浅色产品卡 + Cookie。Reload `#121212` 再白帧再盖回深遮罩后出内容。未点 Cookies Settings / 探索产品。 |
+| 50 | ebay.com | https://www.ebay.com/ | 5 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 50-ebay-overlay.png；50-ebay-complete.png | 落地浅色 **Error Page** `SORRY`，Network `403 Forbidden`。Reload 仍是这堵墙。Overlay `#121212` 再浅。未点 try again，未改 URL。站点 403 不算脚本报错。 |
+| 51 | discord.com | https://discord.com/ | 6 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 51-discord-overlay.png；51-discord-complete.png | 只测未登录营销墙「专为游戏和快乐打造的群聊」，未点登录/打开 Discord，未进服务器。首访空标签 gray≈59 后 f11–f14 `#121212` 再深紫首页。无 gray=255。Console：preload / sentry `ERR_CONNECTION_CLOSED` 是站点。 |
+| 52 | imdb.com | https://www.imdb.com/ | 6 | 浅色 | 深色 | 否 | 深 | 否 | 是 | 否 | 否 | 通过 | 52-imdb-overlay.png；52-imdb-complete.png | 预期浅色，新版实际深色首页。首访 f09–f16 `#121212`，f17–f21 白空壳 gray≈252 var≈580，再深色内容；reload r03 `#121212` 后直接深页，无白。按 gray=255 var=0 且深站才算白闪失败，reload 不复现，不改脚本。未点 Sign in，未往 Search IMDb 打字。 |
+| 53 | xhamster46.desi | https://xhamster46.desi/ | 6 | 深色 | 无 | 否 | 无 | 否 | 否 | 否 | 否 | 跳过 | 53-xhamster46-error.png | NSFW。Helium `ERR_CONNECTION_CLOSED`「无法访问此网站」。连不上记跳过。未改脚本、未换 URL、未往下点。 |
+| 54 | eporner.com | https://www.eporner.com/ | 6 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 54-eporner-overlay.png；54-eporner-complete.png | NSFW。未出年龄墙；只测未登录深色首页，未点视频/搜索。空标签后 f08–f11 `#121212` 再内容。无 gray=255。 |
+| 55 | nytimes.com | https://www.nytimes.com/ | 6 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 55-nytimes-overlay.png；55-nytimes-complete.png | 浅色首页「These top stories are free to read」，不是整页订阅墙。未点 Subscribe / Log in。首访/Reload 白空壳是浅色站；连拍未见 `#121212`。 |
+| 56 | aliexpress.com | https://www.aliexpress.com/ | 6 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 56-aliexpress-overlay.png；56-aliexpress-complete.png | 落地 **ug-login-page/login.html** 浅色 Register/Sign in 墙。Overlay `#121212` 再浅。未填 Email，未点 Continue。 |
+| 57 | booking.com | https://www.booking.com/ | 6 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 57-booking-overlay.png；57-booking-complete.png | 落地 **index.zh-cn.html** 浅色中文首页。Reload 路径：`#121212` → 白空壳 → 再 `#121212` 后出内容（地区跳转二次遮罩）。Genius 登录弹层只测墙，未点。未往目的地搜索框打字。 |
+| 58 | ozon.ru | https://www.ozon.ru/ | 6 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 58-ozon-overlay.png；58-ozon-complete.png | 落地 **ozon.ru/?__rr=1** 站点浅色连接墙「Похоже, нет соединения」。不是 Helium `ERR_CONNECTION_CLOSED`，当墙测。Overlay `#121212` 再浅。未点 Обновить。 |
+| 59 | roblox.com | https://www.roblox.com/ | 6 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 59-roblox-overlay.png；59-roblox-complete.png | 深色中文营销「一个平台。数百万款游戏。」Reload r02 `#121212` 对齐。无 gray=255。未点登录/创建账户。 |
+| 60 | instructure.com | https://www.instructure.com/ | 6 | 未知 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 60-instructure-overlay.png；60-instructure-complete.png | 测 Canvas **营销站**，未点 Login / Explore Canvas，未进租户。浅色 Edtech 首页。Reload r02–r10 `#121212` 再浅。Console：posthog `ERR_CONNECTION_CLOSED` / Failed to fetch 是站点。 |
+| 61 | spotify.com | https://www.spotify.com/ | 7 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 61-spotify-overlay.png；61-spotify-complete.png | 落地未登录 Spotify Web Player，未点播放。Overlay `#121212` 再深色播放器。Console IndexedDB 是站点。 |
+| 62 | walmart.com | https://www.walmart.com/ | 7 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 62-walmart-overlay.png；62-walmart-complete.png | 浅色首页。Overlay `#121212` 再浅。未点 Sign in，未往搜索框打字。购物助手只测墙。 |
+| 63 | amazon.in | https://www.amazon.in/ | 7 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 63-amazon-in-overlay.png；63-amazon-in-complete.png | 测 amazon.in 不是 amazon.com。浅色印度站首页。没往搜索框打字。首访没套住遮罩；reload `#121212` 再浅。 |
+| 64 | xnxx.com | https://www.xnxx.com/ | 7 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 64-xnxx-overlay.png；64-xnxx-complete.png | NSFW。深蓝年龄墙，未点进入、没往下点。Overlay `#121212`。Console 404 是站点。 |
+| 65 | office.com | https://www.office.com/ | 7 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 65-office-overlay.png；65-office-complete.png | 第一次 ERR_CONNECTION_CLOSED，重试落地 m365.cloud.microsoft/zh-hans/ 浅色 M365 登录墙。未点登录。reload `#121212` 再浅。 |
+| 66 | bbc.co.uk | https://www.bbc.co.uk/ | 7 | 浅色 | 浅色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 66-bbc-co-uk-overlay.png；66-bbc-co-uk-complete.png | 测 bbc.co.uk 不是 bbc.com。浅色英国站首页。Cookie 未点。reload 没抓到 `#121212`，overlay 图是内容帧。 |
+| 67 | docomo.ne.jp | https://www.docomo.ne.jp/ | 7 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 67-docomo-overlay.png；67-docomo-complete.png | 落地 www.docomo.ne.jp 浅色首页。reload r15/r16 `#121212` 再浅。首访白骨架是浅色站。Console 遥测是站点。 |
+| 68 | threads.com | https://www.threads.com/ | 7 | 浅色 | 深色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 68-threads-overlay.png；68-threads-complete.png | 只测登录墙，未点 Instagram 登录。落地深色墙（跟系统）。连拍没抓到 `#121212`。Reload 白底 PWA 闪屏是站点，不是空 body。 |
+| 69 | amazon.co.jp | https://www.amazon.co.jp/ | 7 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 69-amazon-co-jp-overlay.png；69-amazon-co-jp-complete.png | 测 amazon.co.jp 不是 amazon.com / amazon.in。浅色日亚首页。没把地址贴进搜索框。reload `#121212` 再浅。配送条未点。 |
+| 70 | paypal.com | https://www.paypal.com/ | 7 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 70-paypal-overlay.png；70-paypal-complete.png | 落地 paypal.com/us/home 浅色营销首页，不是整页登录墙。未点 Log In。Cookie 未点。Overlay `#121212` 再浅。 |
+| 71 | disneyplus.com | https://www.disneyplus.com/ | 8 | 深色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 71-disneyplus-overlay.png；71-disneyplus-complete.png | 必须测。只测未登录营销墙，未进播放。第一次 ERR_CONNECTION_CLOSED，重试深色营销页。reload 近黑空壳，无 gray=255。
+| 72 | etsy.com | https://www.etsy.com/ | 8 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 72-etsy-overlay.png；72-etsy-complete.png | 落地访问暂时受限验证墙（403）。只测墙。Overlay #121212 再浅。
+| 73 | indeed.com | https://www.indeed.com/ | 8 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 73-indeed-overlay.png；73-indeed-complete.png | 没把地址贴进搜索框。落地 Cloudflare 深色验证墙。未点验证。定位不允许。
+| 74 | adobe.com | https://www.adobe.com/ | 8 | 浅色 | 浅色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 74-adobe-overlay.png；74-adobe-complete.png | 第一次 ERR_CONNECTION_CLOSED，重试浅色营销「Get work done」。未点 Sign in。连拍没抓到 #121212。
+| 75 | ya.ru | https://ya.ru/ | 8 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 75-yaru-overlay.png；75-yaru-complete.png | 测 ya.ru 不是 yandex.ru。系统深色首页，未跳 dzen.ru。未往搜索框打字。Overlay #121212 对齐。
+| 76 | bbc.com | https://www.bbc.com/ | 8 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 76-bbc-overlay.png；76-bbc-complete.png | 测 bbc.com 不是 bbc.co.uk。浅色国际新闻首页。Overlay #121212 再浅。未点新闻。
+| 77 | chaturbate.com | https://chaturbate.com/ | 8 | 深色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 77-chaturbate-overlay.png；77-chaturbate-complete.png | NSFW。只测未登录白卡年龄墙，未点 I AGREE，没往下点。Overlay #121212 再浅。
+| 78 | music.youtube.com | https://music.youtube.com/ | 8 | 深色 | 深色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 78-ytm-overlay.png；78-ytm-complete.png | 测 music.youtube.com 不是 youtube.com。深色未登录首页。未点播放。连拍没抓到 #121212。
+| 79 | amazon.de | https://www.amazon.de/ | 8 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 79-amazon-de-overlay.png；79-amazon-de-complete.png | 测 amazon.de 不是其他 amazon。浅色德亚首页。没把地址贴进搜索框。Overlay #121212 再浅。
+| 80 | msn.com | https://www.msn.com/ | 8 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 80-msn-overlay.png；80-msn-complete.png | 系统深色门户。未往 Search the web 打字。Overlay #121212 对齐。
+| 81 | rakuten.co.jp | https://www.rakuten.co.jp/ | 9 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 81-rakuten-overlay.png；81-rakuten-complete.png | 必须测，本批 #81。日语浅色首页。空标签 gray≈58 后 f08 `#121212` 再浅。未登录、未搜索。Console：ERR_CONNECTION_CLOSED / preload 是站点。 |
+| 82 | onlyfans.com | https://onlyfans.com/ | 9 | 深色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 82-onlyfans-overlay.png；82-onlyfans-complete.png | NSFW。只测未登录登录墙，未点登录/精选/ACCEPT ALL。预期深，实际浅色登录墙。白 logo 闪屏是站点。Overlay `#121212` 再浅。 |
+| 83 | telegram.org | https://telegram.org/ | 9 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 83-telegram-overlay.png；83-telegram-complete.png | 测 telegram.org 不是 t.me。浅色官方营销「a new era of messaging」。白空壳是浅色站。未点 Download。 |
+| 84 | ok.ru | https://ok.ru/ | 9 | 浅色 | 浅色 | 否 | 浅 | 否 | 否 | 否 | 否 | 通过 | 84-okru-overlay.png；84-okru-complete.png | 俄区浅色登录墙「Вход в ОК」。只测墙，未登录。Cookie 未点。白/浅空壳是浅色站。Console：ERR_CONNECTION_CLOSED 是站点。 |
+| 85 | deepseek.com | https://www.deepseek.com/ | 9 | 未知 | 浅色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 85-deepseek-overlay.png；85-deepseek-complete.png | 测 deepseek.com 落地页，不是 chat.deepseek.com。浅色「探索未至之境」。未点对话/API。连拍没抓到 `#121212`。 |
+| 86 | vkvideo.ru | https://vkvideo.ru/ | 9 | 未知 | 深色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 86-vkvideo-overlay.png；86-vkvideo-complete.png | VK 视频深色首页。未点播放，没把地址贴进「Поиск видео」。首访较慢；reload 深色骨架，无 gray=255，没抓到 `#121212`。 |
+| 87 | usps.com | https://www.usps.com/ | 9 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 87-usps-overlay.png；87-usps-complete.png | 浅色 USPS 首页。没把地址贴进 Track Packages。Overlay `#121212` 再浅。Console：CSP blob worker / ERR_CONNECTION_CLOSED 是站点。 |
+| 88 | erome.com | https://www.erome.com/ | 9 | 深色 | 深色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 88-erome-overlay.png；88-erome-complete.png | NSFW。只测未登录年龄墙「I AM 18 OR OLDER」，未点 ENTER，没往下点。空标签后深色墙，无 gray=255，没抓到 `#121212`。 |
+| 89 | rm358.com | https://rm358.com/ | 9 | 未知 | 无 | 否 | 无 | 否 | 否 | 否 | 否 | 跳过 | 89-rm358-overlay.png；89-rm358-complete.png | 广告/推送跳转站。第一次+重试都是 Helium `ERR_CONNECTION_CLOSED`「无法访问此网站」。连不上记跳过。未出通知框。未改脚本、未换 URL。 |
+| 90 | scribd.com | https://www.scribd.com/ | 9 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 90-scribd-overlay.png；90-scribd-complete.png | 浅色营销/登录墙。只测墙，未点 Sign in / Download。Cookie「I Understand」未点。没把地址贴进 Search。Overlay `#121212` 再浅。 |
+| 91 | amazon.co.uk | https://www.amazon.co.uk/ | 10 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 91-amazon-co-uk-overlay.png；91-amazon-co-uk-complete.png | 测 amazon.co.uk 不是 amazon.com / amazon.in / amazon.co.jp / amazon.de。浅色英亚。没把地址贴进 Search Amazon.co.uk。reload `#121212` 再浅。首屏 Skip to / Keyboard shortcuts + 导航，未点登录。 |
+| 92 | namu.wiki | https://namu.wiki/ | 10 | 浅色 | 深色 | 否 | 深 | 否 | 否 | 否 | 否 | 通过 | 92-namu-overlay.png；92-namu-complete.png | 韩语。预期浅，实际深色「나무위키:대문」（跟系统）。没把地址贴进「여기에서 검색」。Overlay `#121212` 对齐。 |
+| 93 | qq.com | https://www.qq.com/ | 10 | 浅色 | 深色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 93-qq-overlay.png；93-qq-complete.png | 全球榜独立测，不抄中文榜。预期浅，实际深色腾讯网门户（跟系统）。没把地址贴进搜索。连拍没抓到 `#121212`。Console：ERR_CONNECTION_CLOSED 是站点。 |
+| 94 | hbomax.com | https://www.hbomax.com/ | 10 | 深色 | 深色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 94-hbomax-overlay.png；94-hbomax-complete.png | 落地仍是 hbomax.com，未跳 max.com。深色营销 + Legal Terms cookie 墙，未点 Agree，未进播放。空标签 gray≈58 后深页，没抓到 `#121212`。 |
+| 95 | dcinside.com | https://www.dcinside.com/ | 10 | 浅色 | 浅色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 95-dcinside-overlay.png；95-dcinside-complete.png | 韩语浅色论坛首页。没把地址贴进「갤러리&통합검색」。空标签 gray≈58 后浅页，没抓到 `#121212`。Console：lottie / Instagram embed / CSP 是站点。 |
+| 96 | zillow.com | https://www.zillow.com/ | 10 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 96-zillow-overlay.png；96-zillow-complete.png | 浅色首页 + 人机验证墙「按住以确认您是人类」，未点按住。没把地址贴进搜索。Overlay `#121212` 再浅。 |
+| 97 | chat.deepseek.com | https://chat.deepseek.com/ | 10 | 未知 | 深色 | 否 | 无 | 否 | 否 | 否 | 否 | 通过 | 97-chat-deepseek-overlay.png；97-chat-deepseek-complete.png | 测 chat.deepseek.com 不是 deepseek.com。落地 /sign_in 深色登录墙（手机号/微信码），未登录。连拍已是深墙，没抓到 `#121212`。 |
+| 98 | douyin.com | https://www.douyin.com/ | 10 | 深色 | 混合 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 98-douyin-overlay.png；98-douyin-complete.png | 落地 douyin.com/jingxuan。深色信息流 + 浅色登录墙「登录后免费畅享高清视频」。只测墙，未登录、未刷视频。Overlay `#121212` 再浅墙。 |
+| 99 | messenger.com | https://www.messenger.com/ | 10 | 浅色 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 99-messenger-overlay.png；99-messenger-complete.png | 只测未登录登录墙「开展有意义对话的平台」，未登录。没把地址贴进邮箱框。Overlay `#121212` 再浅。Console：Permissions-Policy /「停下」反调试是站点。 |
+| 100 | shop.app | https://shop.app/ | 10 | 未知 | 浅色 | 否 | 错色 | 否 | 是 | 否 | 否 | 通过 | 100-shop-overlay.png；100-shop-complete.png | 跟着落地：跳 shop.com 跟踪 URL，浅色 403 Forbidden 墙。未开 App Store。只测墙。Overlay `#121212` 再浅。Console：Cat 403 是站点。 |
+
+批次 1–10 已回填。1 的截图相对 `rdc-awf-batch01/`；2 和 TikTok 1.0.2 复测相对 `rdc-awf-batch02/`；3–10 相对 `rdc-awf-batch03/` … `rdc-awf-batch10/`。脚本 1.0.2 已在暴力猴，第 10 批未重装、未 bump。TikTok 旧失败见 `batch-01-report.md`，复测见 `batch-02-report.md`。全球 Top 100 完，不再开第 11 批。未覆盖中文榜。
