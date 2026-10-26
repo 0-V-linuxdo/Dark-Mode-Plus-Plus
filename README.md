@@ -4,9 +4,15 @@ Violentmonkey 用户脚本：在网页首屏真正可见前，用跟随系统/�
 
 ## 安装
 
-1. 在 Helium 中安装 [Violentmonkey](https://violentmonkey.github.io/)。
-2. 打开本目录的 [`anti-white-flash.user.js`](./anti-white-flash.user.js)，或把该文件拖进 Violentmonkey 仪表盘。
-3. 确认脚本已启用。需要的话可在 Violentmonkey 里按网站禁用。
+先装 [Violentmonkey](https://violentmonkey.github.io/)，再点下面的链接。扩展会拦截 `.user.js` 并弹出安装确认，装的就是仓库 `main` 上的最新版。
+
+**[点此安装最新版](https://raw.githubusercontent.com/0-V-linuxdo/Dark-Mode-Plus-Plus/main/anti-white-flash.user.js)**
+
+`raw.githubusercontent.com` 打不开时用备用：
+
+**[备用安装（jsDelivr）](https://cdn.jsdelivr.net/gh/0-V-linuxdo/Dark-Mode-Plus-Plus@main/anti-white-flash.user.js)**
+
+也可以打开 [`anti-white-flash.user.js`](./anti-white-flash.user.js)，或把该文件拖进 Violentmonkey 仪表盘。需要的话可在 Violentmonkey 里按网站禁用。
 
 ## 匹配范围
 

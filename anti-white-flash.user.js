@@ -11,6 +11,9 @@
 // @grant        none
 // @noframes
 // @license      MIT
+// @homepageURL  https://github.com/0-V-linuxdo/Dark-Mode-Plus-Plus
+// @downloadURL  https://raw.githubusercontent.com/0-V-linuxdo/Dark-Mode-Plus-Plus/main/anti-white-flash.user.js
+// @updateURL    https://raw.githubusercontent.com/0-V-linuxdo/Dark-Mode-Plus-Plus/main/anti-white-flash.user.js
 // ==/UserScript==
 
 (function () {
