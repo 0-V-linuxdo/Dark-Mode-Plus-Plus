@@ -31,3 +31,20 @@ Violentmonkey 用户脚本：在网页首屏真正可见前，用跟随系统/�
 - 不处理 iframe，也不改站点自己的长期主题。
 - 与 Dark Reader 等整页改色扩展叠在一起时，可能各盖各的。
 - 超长 loading 的页面最多遮约 2.4 秒，避免把已可交互内容挡住。
+
+## 仓库结构
+
+根目录只放脚本和说明。测试材料都进子目录，避免 GitHub 文件列表被截图文件夹铺满。
+
+| 路径 | 内容 |
+| --- | --- |
+| [`anti-white-flash.user.js`](./anti-white-flash.user.js) | 用户脚本 |
+| [`reports/`](./reports/) | 测试名单、结果表、批次报告 |
+| [`evidence/`](./evidence/) | 截图证据 |
+
+## 测试记录
+
+- [全球 Top 100](./reports/global/top-100-results.md)
+- [中文 Top 100](./reports/zh/top-100-zh-results.md)
+- [系统浅色跳过](./reports/light-verify/light-mode-verify-report.md)
+- [深色系统 × 浅色首屏复测](./reports/dark-retest/dark-retest-light-results.md)
