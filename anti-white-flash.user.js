@@ -2,9 +2,9 @@
 // @name         通用防白闪
 // @name:en      Anti White Flash
 // @namespace    dark-mode-plus-plus.anti-white-flash
-// @version      1.0.3
-// @description  网页首屏真正可见前，用跟随系统/页面深浅色的全屏遮罩挡住白闪。系统浅色时不遮罩。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
-// @description:en Theme-aware overlay that covers the first paint until the real first screen is visible. Skips on a light system theme. Violentmonkey / Helium (Chromium).
+// @version      1.0.4
+// @description  网页首屏真正可见前，用跟随系统/页面深浅色的全屏遮罩挡住白闪。系统浅色或检测到 Dark Reader 时不遮罩。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
+// @description:en Theme-aware overlay that covers the first paint until the real first screen is visible. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
 // @author       Dark Mode++
 // @match        *://*/*
 // @run-at       document-start
@@ -548,6 +548,8 @@
             '  color-scheme: ' + schemeValue + ' !important;',
             bgRules,
             '  contain: paint !important;',
+            '  isolation: isolate !important;',
+            '  filter: none !important;',
             '  transform: translateZ(0);',
             '  transition: opacity ' + FADE_MS + 'ms ease-out;',
             '}'
@@ -591,6 +593,7 @@
             overlay = document.createElement('div');
             overlay.id = OVERLAY_ID;
             overlay.setAttribute('aria-hidden', 'true');
+            overlay.setAttribute('data-darkreader-ignore', '');
         }
         if (overlay.parentNode !== parent) parent.appendChild(overlay);
     }
@@ -631,7 +634,10 @@
             });
             htmlObserver.observe(html, {
                 attributes: true,
-                attributeFilter: THEME_ATTRS,
+                attributeFilter: THEME_ATTRS.concat([
+                    'data-darkreader-mode',
+                    'data-darkreader-scheme'
+                ]),
                 childList: true
             });
         }
@@ -764,6 +770,10 @@
 
     function tick() {
         if (isDone) return;
+        if (isDarkReaderActive()) {
+            yieldToDarkReader();
+            return;
+        }
         if (document.body) ensurePaintWatch();
         snapshotStyleLinks();
         syncVisuals();
@@ -784,8 +794,33 @@
         if (event && event.persisted) finish(true);
     }
 
+    function isDarkReaderActive() {
+        var html = document.documentElement;
+        if (!html) return false;
+        if (html.getAttribute('data-darkreader-mode') || html.getAttribute('data-darkreader-scheme')) return true;
+        if (html.classList && (
+            html.classList.contains('darkreader') ||
+            html.classList.contains('darkreader--loaded')
+        )) return true;
+        var root = document.head || html;
+        if (!root || !root.querySelector) return false;
+        return !!(
+            root.querySelector('meta[name="darkreader"]') ||
+            root.querySelector(
+                'style.darkreader, .darkreader--fallback, .darkreader--user-agent, ' +
+                '.darkreader--invert, .darkreader--inline, .darkreader--override, ' +
+                '.darkreader--variables, .darkreader--root-vars'
+            )
+        );
+    }
+
+    function yieldToDarkReader() {
+        finish(true);
+    }
+
     function start() {
         if (systemScheme() !== 'dark') return;
+        if (isDarkReaderActive()) return;
         bindMedia(colorSchemeMedia, tick);
         bindMedia(reducedMotionMedia, tick);
         waitForHtml();
