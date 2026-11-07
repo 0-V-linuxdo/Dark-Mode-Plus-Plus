@@ -2,9 +2,9 @@
 // @name         通用防白闪
 // @name:en      Anti White Flash
 // @namespace    dark-mode-plus-plus.anti-white-flash
-// @version      1.0.14
-// @description  网页首屏真正可见前，按 Dark Reader 的 document-start fallback 给 html、body 和 body 子节点垫 #181a1b，并给 html 加上 color-scheme: dark。系统浅色或检测到 Dark Reader 时跳过。首屏就绪后立刻撤掉并触发一次重绘。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
-// @description:en Follows Dark Reader's document-start fallback: pads html, body, and body descendants with #181a1b and sets html color-scheme: dark until the real first screen is visible. Skips on a light system theme or when Dark Reader is active. Removes the pad as soon as the first screen is ready and kicks a repaint. Violentmonkey / Helium (Chromium).
+// @version      1.0.21
+// @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫 #181a1b，不盖整页罩、也不给子节点刷色。看见站点自己的深色首屏就撤垫色；空着的白页超时也不会提前露出来。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
+// @description:en Follows Dark Reader's document-start canvas pad: colors html/body with #181a1b and color-scheme: dark, without a full-page overlay or descendant !important paint. Drops once the site's own dark first screen paints. Timeouts never uncover an empty still-white page. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
 // @author       Dark Mode++
 // @match        *://*/*
 // @run-at       document-start
@@ -18,6 +18,14 @@
 
 (function () {
     'use strict';
+
+    // A concatenated or double-installed copy must not inject a second pad.
+    // The first copy owns the document for this page.
+    try {
+        if (window.__dmppAwfActive) return;
+        window.__dmppAwfActive = true;
+        window.__dmppAwfVersion = '1.0.21';
+    } catch (error) {}
 
     // Keep this boot path deliberately tiny and before every helper declaration.
     // Violentmonkey still cannot run before the browser creates a new document,
@@ -49,27 +57,27 @@
         window.matchMedia('(prefers-color-scheme: dark)').matches &&
         earlyRoot
     ) {
-        // Copy Dark Reader's inject/fallback.ts: a document-start stylesheet,
-        // not inline html/body styles and not a full-viewport overlay node.
+        // Copy Dark Reader's document-start canvas pad: a stylesheet on
+        // html/body, not inline styles and not a full-viewport overlay node.
         try {
-            earlyStyle = document.createElement('style');
-            earlyStyle.id = 'dmpp-awf-style';
+            earlyStyle = document.getElementById('dmpp-awf-style');
+            if (!earlyStyle) {
+                earlyStyle = document.createElement('style');
+                earlyStyle.id = 'dmpp-awf-style';
+            }
             earlyStyle.media = 'screen';
+            // Pad the document canvas only. Dark Reader's fallback also
+            // paints `body :not(iframe)`, but that sheet is replaced by the
+            // real inversion immediately. Keeping descendant !important paint
+            // here is a full-page cover: Discord's UI never shows through.
             earlyStyle.textContent = [
-                'html, body, body :not(iframe) {',
-                '    background-color: #181a1b !important;',
-                '    border-color: #776e62 !important;',
-                '    color: #e8e6e3 !important;',
-                '}',
                 'html, body {',
+                '    background-color: #181a1b !important;',
                 '    opacity: 1 !important;',
                 '    transition: none !important;',
                 '}',
                 'html {',
                 '    background-color: #181a1b !important;',
-                '    color-scheme: dark !important;',
-                '}',
-                'iframe {',
                 '    color-scheme: dark !important;',
                 '}'
             ].join('\n');
@@ -116,8 +124,6 @@
     var DARK_SURFACE_CACHE_MS = 80;
     var LIGHT_FALLBACK = '#ffffff';
     var DARK_FALLBACK = '#181a1b';
-    var DARK_FALLBACK_TEXT = '#e8e6e3';
-    var DARK_FALLBACK_BORDER = '#776e62';
 
     var THEME_ATTRS = [
         'class', 'style', 'dark', 'light', 'data-theme', 'data-mode',
@@ -351,28 +357,67 @@
         return stored;
     }
 
+    function parseAlphaChannel(value) {
+        if (value == null || value === '') return 1;
+        return String(value).slice(-1) === '%' ? parseFloat(value) / 100 : Number(value);
+    }
+
+    function parseLightness01(value, unit) {
+        var n = Number(value);
+        if (unit === '%') return n / 100;
+        return n > 1 ? n / 100 : n;
+    }
+
+    function colorFromRgb(r, g, b, css) {
+        return { r: r, g: g, b: b, css: css };
+    }
+
+    function colorFromLightness(lightness, css) {
+        var gray = Math.max(0, Math.min(255, Math.round(lightness * 255)));
+        return { r: gray, g: gray, b: gray, css: css, lightness: lightness };
+    }
+
     function parseComputedColor(input) {
         if (!input || input === 'transparent') return null;
         var text = String(input).trim();
-        var m = text.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i);
+        var m = text.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+%?))?\s*\)$/i);
         if (!m) {
             m = text.match(/^rgba?\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i);
         }
-        if (!m) return null;
-        var alpha = 1;
-        if (m[4] != null) {
-            alpha = String(m[4]).slice(-1) === '%' ? parseFloat(m[4]) / 100 : Number(m[4]);
+        if (m) {
+            if (!(parseAlphaChannel(m[4]) >= 0.6)) return null;
+            return colorFromRgb(Number(m[1]), Number(m[2]), Number(m[3]), text);
         }
-        if (!(alpha >= 0.6)) return null;
-        return {
-            r: Number(m[1]),
-            g: Number(m[2]),
-            b: Number(m[3]),
-            css: text
-        };
+
+        m = text.match(/^oklab\(\s*([\d.]+)(%?)\s+[-\d.]+\s+[-\d.]+(?:\s*\/\s*([\d.]+%?))?\s*\)$/i);
+        if (!m) {
+            m = text.match(/^oklch\(\s*([\d.]+)(%?)\s+[-\d.]+\s+[-\d.]+(?:\s*\/\s*([\d.]+%?))?\s*\)$/i);
+        }
+        if (m) {
+            if (!(parseAlphaChannel(m[3]) >= 0.6)) return null;
+            return colorFromLightness(parseLightness01(m[1], m[2]), text);
+        }
+
+        m = text.match(/^lab\(\s*([\d.]+)(%?)\s+[-\d.]+\s+[-\d.]+(?:\s*\/\s*([\d.]+%?))?\s*\)$/i);
+        if (!m) {
+            m = text.match(/^lch\(\s*([\d.]+)(%?)\s+[-\d.]+\s+[-\d.]+(?:\s*\/\s*([\d.]+%?))?\s*\)$/i);
+        }
+        if (m) {
+            if (!(parseAlphaChannel(m[3]) >= 0.6)) return null;
+            return colorFromLightness(Number(m[1]) / 100, text);
+        }
+
+        m = text.match(/^color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+%?))?\s*\)$/i);
+        if (m) {
+            if (!(parseAlphaChannel(m[4]) >= 0.6)) return null;
+            return colorFromRgb(Number(m[1]) * 255, Number(m[2]) * 255, Number(m[3]) * 255, text);
+        }
+
+        return null;
     }
 
     function isDarkColor(color) {
+        if (typeof color.lightness === 'number') return color.lightness < 0.45;
         var r = color.r / 255;
         var g = color.g / 255;
         var b = color.b / 255;
@@ -383,13 +428,38 @@
     }
 
     function isNearWhiteColor(color) {
+        if (typeof color.lightness === 'number') return color.lightness >= 0.96;
         return color.r >= 245 && color.g >= 245 && color.b >= 245;
+    }
+
+    function collectPadSheets() {
+        var nodes = [];
+        var found, i;
+        if (styleEl) nodes.push(styleEl);
+        try {
+            found = document.querySelectorAll('#' + STYLE_ID);
+            for (i = 0; i < found.length; i++) {
+                if (nodes.indexOf(found[i]) === -1) nodes.push(found[i]);
+            }
+        } catch (error) {}
+        return nodes;
+    }
+
+    function padSheetIsDyeing() {
+        var nodes, i;
+        if (guardDisableDepth > 0) return false;
+        if (earlyRootVisuals) return true;
+        nodes = collectPadSheets();
+        for (i = 0; i < nodes.length; i++) {
+            if (!nodes[i].disabled) return true;
+        }
+        return false;
     }
 
     function isOwnGuardColor(color) {
         // Dark Reader's fallback canvas is #181a1b (24,26,27). While our matching
-        // stylesheet is active, that color is our pad, not the site's paint.
-        return !!(color && (styleEl || earlyRootVisuals) &&
+        // stylesheet is actively dyeing the page, that color is our pad.
+        return !!(color && padSheetIsDyeing() &&
             color.r === 24 && color.g === 26 && color.b === 27);
     }
 
@@ -397,28 +467,40 @@
     function withGuardDisabled(fn) {
         // Same trick as Dark Reader detector.ts: disable our sheets, sample the
         // page's real colors, then turn them back on in the same turn.
-        if (styleEl && guardDisableDepth === 0) {
-            try { styleEl.disabled = true; } catch (error) {}
+        var nodes, i;
+        if (guardDisableDepth === 0) {
+            nodes = collectPadSheets();
+            for (i = 0; i < nodes.length; i++) {
+                try { nodes[i].disabled = true; } catch (error) {}
+            }
+            viewportSample = null;
+            viewportSampleAt = 0;
+            try {
+                if (document.documentElement) document.documentElement.offsetHeight;
+            } catch (error) {}
         }
         guardDisableDepth += 1;
         try {
             return fn();
         } finally {
             guardDisableDepth -= 1;
-            if (styleEl && guardDisableDepth === 0) {
-                try { styleEl.disabled = false; } catch (error) {}
+            if (guardDisableDepth === 0) {
+                nodes = collectPadSheets();
+                for (i = 0; i < nodes.length; i++) {
+                    try { nodes[i].disabled = false; } catch (error) {}
+                }
             }
         }
     }
 
     function hasDarkPagePaint() {
-        if (themeFromElement(document.documentElement) === 'dark') return true;
-        if (themeFromElement(document.body) === 'dark') return true;
+        // Class / color-scheme can appear while the canvas is still white
+        // (Telegram adds theme-dark before its CSS paints; Chromium also
+        // reports color-scheme: dark from prefers-color-scheme). Only a real
+        // dark surface is safe to uncover.
         return withGuardDisabled(function () {
-            try {
-                if (window.getComputedStyle(document.documentElement).colorScheme === 'dark') return true;
-            } catch (error) {}
-            var painted = getOpaqueBackground(document.body);
+            var painted = getOpaqueBackground(document.body) ||
+                getOpaqueBackground(document.documentElement);
             if (painted && isDarkColor(painted) && !isOwnGuardColor(painted)) return true;
             // Some SPAs keep body/html white forever and paint their real shell one
             // level down. Do not mistake that white document canvas for the screen.
@@ -463,7 +545,7 @@
                 // html/body backgrounds are supplied by this script until it is
                 // safe to reveal. They cannot prove that the first screen is dark.
                 if ((el === document.documentElement || el === document.body) &&
-                    (styleEl || earlyRootVisuals)) continue;
+                    padSheetIsDyeing()) continue;
                 color = getOpaqueBackground(el);
                 if (color && isOwnGuardColor(color)) continue;
                 if (color) return color;
@@ -483,11 +565,16 @@
     // them, otherwise every sample would just see the guard canvas.
     function getViewportSample() {
         var now = Date.now();
+        var sample;
         if (now - viewportSampleAt < DARK_SURFACE_CACHE_MS && viewportSample) return viewportSample;
-        viewportSampleAt = now;
-        viewportSample = emptyViewportSample();
-
-        if (!document.body || !window.innerWidth || !window.innerHeight) return viewportSample;
+        sample = emptyViewportSample();
+        if (!document.body || !window.innerWidth || !window.innerHeight) {
+            viewportSampleAt = now;
+            viewportSample = sample;
+            return sample;
+        }
+        // withGuardDisabled clears the cached sample so we must fill a local
+        // object. Using the cache field here used to throw and freeze the pad.
         return withGuardDisabled(function () {
             var xs = [0.16, 0.5, 0.84];
             var ys = [0.16, 0.5, 0.84];
@@ -498,22 +585,25 @@
                         Math.max(1, Math.floor(window.innerHeight * ys[yi]))
                     );
                     if (!painted) continue;
-                    viewportSample.total++;
+                    sample.total++;
                     if (isDarkColor(painted)) {
-                        viewportSample.dark++;
-                        if (!viewportSample.darkColor) viewportSample.darkColor = painted;
+                        sample.dark++;
+                        if (!sample.darkColor) sample.darkColor = painted;
                     } else if (isNearWhiteColor(painted)) {
-                        viewportSample.light++;
-                        if (!viewportSample.lightColor) viewportSample.lightColor = painted;
+                        sample.light++;
+                        if (!sample.lightColor) sample.lightColor = painted;
                     }
                 }
             }
-            return viewportSample;
+            viewportSampleAt = Date.now();
+            viewportSample = sample;
+            return sample;
         });
     }
 
     function getVisibleDarkSurface() {
         var sample = getViewportSample();
+        if (!sample || !sample.total) return null;
         // Need a mostly-dark viewport, not a white screen with a dark sidebar.
         // Transparent samples are ignored, so a dark SPA with a few holes still
         // counts; two or more light hits still keep the overlay down.
@@ -757,22 +847,28 @@
         });
     }
 
-    function isFirstScreenReady() {
+    function firstScreenBlocker() {
         var html = document.documentElement;
         var body = document.body;
-        if (!html || !body) return false;
-        if (document.readyState === 'loading') return false;
-        if (!hasPainted) return false;
-        if (!areStylesheetsReady()) return false;
-        if (!isShown(html) || !isShown(body)) return false;
-        if (waitingForStoredTheme()) return false;
-        if (!hasSubstantialContent()) return false;
-        // Keep the html/body canvas up until the site's own dark first screen
-        // exists. The guard itself is not a covering overlay, so leaving it a
-        // little longer cannot freeze a logged-in app the way a full-viewport
-        // node could.
-        if (resolveScheme() === 'dark' && !hasDarkPagePaint()) return false;
-        return true;
+        if (!html || !body) return 'no-root';
+        if (document.readyState === 'loading') return 'loading';
+        if (!isShown(html) || !isShown(body)) return 'hidden';
+        if (!hasSubstantialContent()) return 'content';
+        // A real dark first screen is enough. Discord injects hundreds of CSS
+        // chunks and never goes idle; waiting for rAF/styles/settle keeps the
+        // pad up after Friends is already painted.
+        if (resolveScheme() === 'dark') {
+            if (!hasDarkPagePaint()) return 'dark-paint';
+            return '';
+        }
+        if (!hasPainted) return 'paint';
+        if (!areStylesheetsReady()) return 'styles';
+        if (waitingForStoredTheme()) return 'theme';
+        return '';
+    }
+
+    function isFirstScreenReady() {
+        return !firstScreenBlocker();
     }
 
     function buildCss(scheme, color) {
@@ -784,24 +880,16 @@
                 '}'
             ].join('\n');
         }
-        // Mirror Dark Reader inject/fallback.ts plus the user-agent html canvas.
-        // Keep descendants covered until the site's own dark first screen exists,
-        // then drop this stylesheet entirely.
+        // Pad html/body like Dark Reader's canvas, never descendant paint.
+        // `body :not(iframe)` with !important is visually a full-page cover.
         return [
-            'html, body, body :not(iframe) {',
-            '  background-color: ' + DARK_FALLBACK + ' !important;',
-            '  border-color: ' + DARK_FALLBACK_BORDER + ' !important;',
-            '  color: ' + DARK_FALLBACK_TEXT + ' !important;',
-            '}',
             'html, body {',
+            '  background-color: ' + DARK_FALLBACK + ' !important;',
             '  opacity: 1 !important;',
             '  transition: none !important;',
             '}',
             'html {',
             '  background-color: ' + DARK_FALLBACK + ' !important;',
-            '  color-scheme: dark !important;',
-            '}',
-            'iframe {',
             '  color-scheme: dark !important;',
             '}'
         ].join('\n');
@@ -815,7 +903,12 @@
 
     function ensureStyle() {
         var parent = document.head || document.documentElement;
+        var existing;
         if (!parent) return;
+        if (!styleEl || !styleEl.isConnected) {
+            try { existing = document.getElementById(STYLE_ID); } catch (error) {}
+            if (existing) styleEl = existing;
+        }
         if (!styleEl) {
             styleEl = document.createElement('style');
             styleEl.id = STYLE_ID;
@@ -1038,11 +1131,14 @@
     }
 
     function removeStyleNode() {
+        var leftovers, i;
         if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
         styleEl = null;
         try {
-            var leftover = document.getElementById(STYLE_ID);
-            if (leftover && leftover.parentNode) leftover.parentNode.removeChild(leftover);
+            leftovers = document.querySelectorAll('#' + STYLE_ID);
+            for (i = 0; i < leftovers.length; i++) {
+                if (leftovers[i].parentNode) leftovers[i].parentNode.removeChild(leftovers[i]);
+            }
         } catch (error) {}
         clearEarlyRootVisuals();
     }
@@ -1086,14 +1182,24 @@
         scheduleCompositorKicks();
     }
 
+    function canUncoverStillWhitePad() {
+        // Light pages must be able to restore themselves. Dark/unknown canvases
+        // on a dark system keep the Dark Reader pad until the site itself paints
+        // dark, even if the SPA already has loading text.
+        if (isConfirmedLightPage()) return true;
+        if (resolveScheme() === 'light') return true;
+        return hasDarkPagePaint();
+    }
+
     function finish(instant, force) {
         if (isDone) {
             if (instant) dropGuardCanvas();
             return;
         }
-        // Unforced finishes still require a ready first screen so a dark cover
-        // is not dropped onto a still-white SPA canvas. Forced timeouts may
-        // lift after that wait; they must never leave the canvas up forever.
+        // Forced timeouts may skip a perfect first-screen sample, but they
+        // still cannot uncover a still-white dark SPA. Instant finishes
+        // (Dark Reader, bfcache) drop immediately.
+        if (force && !canUncoverStillWhitePad()) return;
         if (!instant && !force && !isFirstScreenReady()) return;
         isDone = true;
         cleanupWatchers();
@@ -1115,16 +1221,28 @@
         }, wait);
     }
 
+    var awfDebug = { version: '1.0.21', ticks: 0, block: '', err: '' };
+    try { window.__dmppAwfDebug = awfDebug; } catch (error) {}
+
     function tick() {
-        if (isDone) return;
-        if (isDarkReaderActive()) {
-            yieldToDarkReader();
-            return;
+        awfDebug.ticks += 1;
+        try {
+            if (isDone) return;
+            if (isDarkReaderActive()) {
+                yieldToDarkReader();
+                return;
+            }
+            if (document.body) ensurePaintWatch();
+            snapshotStyleLinks();
+            awfDebug.block = firstScreenBlocker() || 'ready';
+            if (awfDebug.block === 'ready') {
+                finish(true);
+                return;
+            }
+            syncVisuals();
+        } catch (error) {
+            awfDebug.err = String(error && (error.stack || error.message) || error);
         }
-        if (document.body) ensurePaintWatch();
-        snapshotStyleLinks();
-        syncVisuals();
-        if (isFirstScreenReady()) scheduleFinish();
     }
 
     function onDomReady() {
@@ -1191,10 +1309,19 @@
         }
         bootstrapDarkVisuals();
         scheduleCompositorKicks();
-        // Arm the hard deadline before any later setup that might throw.
+        // These deadlines only retry a reveal. They must not uncover a still-
+        // white dark SPA the way a full-viewport overlay used to time out.
+        // If the site's own dark first screen is already painted, force the
+        // drop even when mutation observers keep postponing settle.
         hardMaxTimer = setTimeout(function () {
             if (isDone) return;
-            finish(true);
+            try { tick(); } catch (error) {}
+            if (isDone) return;
+            try {
+                if (canUncoverStillWhitePad()) finish(true, true);
+            } catch (error) {
+                awfDebug.err = awfDebug.err || String(error && (error.stack || error.message) || error);
+            }
         }, HARD_MAX_MS);
         bindMedia(colorSchemeMedia, tick);
         bindMedia(reducedMotionMedia, tick);
@@ -1202,14 +1329,13 @@
         pollTimer = setInterval(tick, POLL_MS);
         overlayMaxTimer = setTimeout(function () {
             if (isDone) return;
-            tick();
-            if (isFirstScreenReady()) {
-                scheduleFinish();
-                return;
+            try { tick(); } catch (error) {}
+            if (isDone) return;
+            try {
+                if (canUncoverStillWhitePad()) finish(true, true);
+            } catch (error) {
+                awfDebug.err = awfDebug.err || String(error && (error.stack || error.message) || error);
             }
-            // The first screen is already populated. Do not wait forever for a
-            // perfect dark-paint sample (logged-in SPA shells often never pass).
-            if (hasSubstantialContent()) finish(true);
         }, OVERLAY_MAX_MS);
         document.addEventListener('DOMContentLoaded', onDomReady);
         window.addEventListener('load', onLoad);
