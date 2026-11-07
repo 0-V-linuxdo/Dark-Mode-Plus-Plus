@@ -2,9 +2,9 @@
 // @name         通用防白闪
 // @name:en      Anti White Flash
 // @namespace    dark-mode-plus-plus.anti-white-flash
-// @version      1.0.4
-// @description  网页首屏真正可见前，用跟随系统/页面深浅色的全屏遮罩挡住白闪。系统浅色或检测到 Dark Reader 时不遮罩。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
-// @description:en Theme-aware overlay that covers the first paint until the real first screen is visible. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
+// @version      1.0.14
+// @description  网页首屏真正可见前，按 Dark Reader 的 document-start fallback 给 html、body 和 body 子节点垫 #181a1b，并给 html 加上 color-scheme: dark。系统浅色或检测到 Dark Reader 时跳过。首屏就绪后立刻撤掉并触发一次重绘。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
+// @description:en Follows Dark Reader's document-start fallback: pads html, body, and body descendants with #181a1b and sets html color-scheme: dark until the real first screen is visible. Skips on a light system theme or when Dark Reader is active. Removes the pad as soon as the first screen is ready and kicks a repaint. Violentmonkey / Helium (Chromium).
 // @author       Dark Mode++
 // @match        *://*/*
 // @run-at       document-start
@@ -19,6 +19,89 @@
 (function () {
     'use strict';
 
+    // Keep this boot path deliberately tiny and before every helper declaration.
+    // Violentmonkey still cannot run before the browser creates a new document,
+    // but as soon as it is allowed to execute, give that document a dark canvas.
+    // The normal lifecycle below removes these temporary root styles when a page
+    // is confirmed light or when Dark Reader takes over.
+    var earlyRoot = document.documentElement;
+    var earlyStyle = null;
+    var earlyHeadMover = null;
+    var earlyRootVisuals = false;
+    var earlyDarkReader = false;
+    try {
+        earlyDarkReader = !!(earlyRoot && (
+            earlyRoot.getAttribute('data-darkreader-mode') ||
+            earlyRoot.getAttribute('data-darkreader-scheme') ||
+            (earlyRoot.classList && (
+                earlyRoot.classList.contains('darkreader') ||
+                earlyRoot.classList.contains('darkreader--loaded')
+            )) ||
+            document.querySelector('.darkreader--fallback, .darkreader, style.darkreader')
+        ));
+    } catch (error) {
+        earlyDarkReader = false;
+    }
+    if (
+        window.top === window.self &&
+        !earlyDarkReader &&
+        typeof window.matchMedia === 'function' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches &&
+        earlyRoot
+    ) {
+        // Copy Dark Reader's inject/fallback.ts: a document-start stylesheet,
+        // not inline html/body styles and not a full-viewport overlay node.
+        try {
+            earlyStyle = document.createElement('style');
+            earlyStyle.id = 'dmpp-awf-style';
+            earlyStyle.media = 'screen';
+            earlyStyle.textContent = [
+                'html, body, body :not(iframe) {',
+                '    background-color: #181a1b !important;',
+                '    border-color: #776e62 !important;',
+                '    color: #e8e6e3 !important;',
+                '}',
+                'html, body {',
+                '    opacity: 1 !important;',
+                '    transition: none !important;',
+                '}',
+                'html {',
+                '    background-color: #181a1b !important;',
+                '    color-scheme: dark !important;',
+                '}',
+                'iframe {',
+                '    color-scheme: dark !important;',
+                '}'
+            ].join('\n');
+            if (document.head) {
+                document.head.appendChild(earlyStyle);
+            } else {
+                earlyRoot.appendChild(earlyStyle);
+                earlyHeadMover = new MutationObserver(function () {
+                    if (!document.head || !earlyStyle || !earlyStyle.isConnected) {
+                        if (earlyHeadMover) earlyHeadMover.disconnect();
+                        earlyHeadMover = null;
+                        return;
+                    }
+                    earlyHeadMover.disconnect();
+                    earlyHeadMover = null;
+                    document.head.appendChild(earlyStyle);
+                });
+                earlyHeadMover.observe(earlyRoot, { childList: true });
+            }
+            earlyRootVisuals = true;
+        } catch (error) {
+            earlyStyle = null;
+        }
+        // Nudge Arc to composite this dark canvas. Without a layer change,
+        // some webviews stay on the browser's white backing until a later paint.
+        try {
+            earlyRoot.style.setProperty('transform', 'translateZ(0)');
+            void earlyRoot.offsetHeight;
+            earlyRoot.style.removeProperty('transform');
+        } catch (error) {}
+    }
+
     if (window.top !== window.self) return;
 
     var OVERLAY_ID = 'dmpp-awf-overlay';
@@ -26,11 +109,15 @@
     var FADE_MS = 160;
     var SETTLE_MS = 120;
     var THEME_GRACE_MS = 400;
+    var LIGHT_PAGE_GRACE_MS = 700;
     var POLL_MS = 50;
     var OVERLAY_MAX_MS = 3200;
     var HARD_MAX_MS = 5000;
+    var DARK_SURFACE_CACHE_MS = 80;
     var LIGHT_FALLBACK = '#ffffff';
-    var DARK_FALLBACK = '#121212';
+    var DARK_FALLBACK = '#181a1b';
+    var DARK_FALLBACK_TEXT = '#e8e6e3';
+    var DARK_FALLBACK_BORDER = '#776e62';
 
     var THEME_ATTRS = [
         'class', 'style', 'dark', 'light', 'data-theme', 'data-mode',
@@ -67,7 +154,7 @@
         : null;
 
     var overlay = null;
-    var styleEl = null;
+    var styleEl = earlyStyle;
     var htmlObserver = null;
     var bodyObserver = null;
     var docObserver = null;
@@ -77,6 +164,8 @@
     var hardMaxTimer = null;
     var fadeTimer = null;
     var styleTimer = null;
+    var kickTimers = [];
+    var kickGen = 0;
     var observedBody = null;
     var initialStyleLinks = null;
     var boundLinks = typeof WeakSet === 'function' ? new WeakSet() : [];
@@ -88,6 +177,9 @@
     var lastScheme = null;
     var lastColor = null;
     var stylesReadyAt = 0;
+    var pageLoadedAt = 0;
+    var viewportSampleAt = 0;
+    var viewportSample = null;
 
     function tokenSet(list) {
         var out = Object.create(null);
@@ -294,9 +386,44 @@
         return color.r >= 245 && color.g >= 245 && color.b >= 245;
     }
 
+    function isOwnGuardColor(color) {
+        // Dark Reader's fallback canvas is #181a1b (24,26,27). While our matching
+        // stylesheet is active, that color is our pad, not the site's paint.
+        return !!(color && (styleEl || earlyRootVisuals) &&
+            color.r === 24 && color.g === 26 && color.b === 27);
+    }
+
+    var guardDisableDepth = 0;
+    function withGuardDisabled(fn) {
+        // Same trick as Dark Reader detector.ts: disable our sheets, sample the
+        // page's real colors, then turn them back on in the same turn.
+        if (styleEl && guardDisableDepth === 0) {
+            try { styleEl.disabled = true; } catch (error) {}
+        }
+        guardDisableDepth += 1;
+        try {
+            return fn();
+        } finally {
+            guardDisableDepth -= 1;
+            if (styleEl && guardDisableDepth === 0) {
+                try { styleEl.disabled = false; } catch (error) {}
+            }
+        }
+    }
+
     function hasDarkPagePaint() {
-        var painted = getOpaqueBackground(document.body) || getOpaqueBackground(document.documentElement);
-        return !!(painted && isDarkColor(painted));
+        if (themeFromElement(document.documentElement) === 'dark') return true;
+        if (themeFromElement(document.body) === 'dark') return true;
+        return withGuardDisabled(function () {
+            try {
+                if (window.getComputedStyle(document.documentElement).colorScheme === 'dark') return true;
+            } catch (error) {}
+            var painted = getOpaqueBackground(document.body);
+            if (painted && isDarkColor(painted) && !isOwnGuardColor(painted)) return true;
+            // Some SPAs keep body/html white forever and paint their real shell one
+            // level down. Do not mistake that white document canvas for the screen.
+            return !!getVisibleDarkSurface();
+        });
     }
 
     function getOpaqueBackground(el) {
@@ -306,6 +433,114 @@
         } catch (error) {
             return null;
         }
+    }
+
+    function isGuardNode(el) {
+        return !!(el && (el.id === OVERLAY_ID || el.id === STYLE_ID));
+    }
+
+    function opaqueBackdropAt(x, y) {
+        var stack, i, el, depth, color;
+        try {
+            // Hit-testing must see through our own overlay. elementFromPoint
+            // can still return a pointer-events:none cover in some engines, and
+            // walking only that node's parents never reaches the page shell.
+            if (typeof document.elementsFromPoint === 'function') {
+                stack = document.elementsFromPoint(x, y);
+            } else {
+                el = document.elementFromPoint(x, y);
+                stack = el ? [el] : [];
+            }
+        } catch (error) {
+            return null;
+        }
+        if (!stack || !stack.length) return null;
+        for (i = 0; i < stack.length; i++) {
+            el = stack[i];
+            if (isGuardNode(el)) continue;
+            for (depth = 0; el && depth < 32; depth++, el = el.parentElement) {
+                if (isGuardNode(el)) continue;
+                // html/body backgrounds are supplied by this script until it is
+                // safe to reveal. They cannot prove that the first screen is dark.
+                if ((el === document.documentElement || el === document.body) &&
+                    (styleEl || earlyRootVisuals)) continue;
+                color = getOpaqueBackground(el);
+                if (color && isOwnGuardColor(color)) continue;
+                if (color) return color;
+            }
+        }
+        return null;
+    }
+
+    function emptyViewportSample() {
+        return { dark: 0, light: 0, total: 0, darkColor: null, lightColor: null };
+    }
+
+    // A dark first screen can be an inner application shell rather than body/html.
+    // Sample visible pixels, then use the first opaque backdrop beneath each point.
+    // This is viewport-based so an off-screen dark node cannot make a white first
+    // screen look safe to reveal. html/body are skipped while this script is dyeing
+    // them, otherwise every sample would just see the guard canvas.
+    function getViewportSample() {
+        var now = Date.now();
+        if (now - viewportSampleAt < DARK_SURFACE_CACHE_MS && viewportSample) return viewportSample;
+        viewportSampleAt = now;
+        viewportSample = emptyViewportSample();
+
+        if (!document.body || !window.innerWidth || !window.innerHeight) return viewportSample;
+        return withGuardDisabled(function () {
+            var xs = [0.16, 0.5, 0.84];
+            var ys = [0.16, 0.5, 0.84];
+            for (var yi = 0; yi < ys.length; yi++) {
+                for (var xi = 0; xi < xs.length; xi++) {
+                    var painted = opaqueBackdropAt(
+                        Math.max(1, Math.floor(window.innerWidth * xs[xi])),
+                        Math.max(1, Math.floor(window.innerHeight * ys[yi]))
+                    );
+                    if (!painted) continue;
+                    viewportSample.total++;
+                    if (isDarkColor(painted)) {
+                        viewportSample.dark++;
+                        if (!viewportSample.darkColor) viewportSample.darkColor = painted;
+                    } else if (isNearWhiteColor(painted)) {
+                        viewportSample.light++;
+                        if (!viewportSample.lightColor) viewportSample.lightColor = painted;
+                    }
+                }
+            }
+            return viewportSample;
+        });
+    }
+
+    function getVisibleDarkSurface() {
+        var sample = getViewportSample();
+        // Need a mostly-dark viewport, not a white screen with a dark sidebar.
+        // Transparent samples are ignored, so a dark SPA with a few holes still
+        // counts; two or more light hits still keep the overlay down.
+        if (sample.dark >= 5 && (sample.total - sample.dark) <= 2 && sample.dark / sample.total >= 0.75) {
+            return { color: sample.darkColor, darkPoints: sample.dark, totalPoints: sample.total };
+        }
+        return null;
+    }
+
+    function isConfirmedLightPage(painted) {
+        var html = document.documentElement;
+        var body = document.body;
+        if (themeFromElement(html) === 'dark' || themeFromElement(body) === 'dark') return false;
+        if (getStoredTheme() === 'dark') return false;
+        if (!hasSubstantialContent() || !areStylesheetsReady()) return false;
+        if (getVisibleDarkSurface()) return false;
+        var sample = getViewportSample();
+        if (sample.dark >= 3) return false;
+        // Strong inner white content: a real light page, not an empty SPA shell.
+        // Do not wait for window load; that would leave a light page dyed dark.
+        if (sample.light >= 5 && (sample.total - sample.light) <= 2 && sample.light / sample.total >= 0.75) {
+            return document.readyState !== 'loading';
+        }
+        if (!painted || isOwnGuardColor(painted) || !isNearWhiteColor(painted)) return false;
+        if (document.readyState !== 'complete') return false;
+        var loadedFor = pageLoadedAt ? Date.now() - pageLoadedAt : 0;
+        return loadedFor >= LIGHT_PAGE_GRACE_MS;
     }
 
     function resolveScheme() {
@@ -326,12 +561,15 @@
         if (metaTheme) return metaTheme;
 
         if (areStylesheetsReady() && hasSubstantialContent()) {
+            if (getVisibleDarkSurface()) return 'dark';
             var painted = getOpaqueBackground(body) || getOpaqueBackground(html);
-            if (painted) {
+            if (painted && !isOwnGuardColor(painted)) {
                 if (isDarkColor(painted)) return 'dark';
-                // Default #fff SPA shells are not a light-theme signal under system dark.
                 if (!(isNearWhiteColor(painted) && systemScheme() === 'dark')) return 'light';
             }
+            // A complete, visibly white document with no dark shell is a real
+            // light page (for example, a marketing page), not a dark SPA shell.
+            if (isConfirmedLightPage(painted)) return 'light';
         }
         return systemScheme();
     }
@@ -344,7 +582,10 @@
 
     function getOverlayColor(scheme) {
         if (!areStylesheetsReady() || !hasSubstantialContent()) return null;
-        var painted = getOpaqueBackground(document.body) || getOpaqueBackground(document.documentElement);
+        var surface = scheme === 'dark' ? getVisibleDarkSurface() : null;
+        var painted = surface && surface.color ? surface.color :
+            (getOpaqueBackground(document.body) || getOpaqueBackground(document.documentElement));
+        if (painted && isOwnGuardColor(painted)) painted = null;
         if (!painted || !isSafeCssColor(painted.css)) return null;
         var paintedScheme = isDarkColor(painted) ? 'dark' : 'light';
         return paintedScheme === scheme ? painted.css : null;
@@ -404,6 +645,7 @@
         if (document.readyState === 'loading') return false;
         snapshotStyleLinks();
         var links = initialStyleLinks || [];
+        var pending = false;
         for (var i = 0; i < links.length; i++) {
             var link = links[i];
             if (!isLinkApplicable(link)) continue;
@@ -411,6 +653,16 @@
                 if (link.sheet) continue;
             } catch (error) {
                 continue;
+            }
+            pending = true;
+            break;
+        }
+        if (pending) {
+            // A hanging stylesheet (blocked, CORS, never-firing load) must not
+            // keep a logged-in app under the overlay forever.
+            if (document.readyState === 'complete' && pageLoadedAt && Date.now() - pageLoadedAt >= 1200) {
+                if (!stylesReadyAt) stylesReadyAt = Date.now();
+                return true;
             }
             return false;
         }
@@ -484,6 +736,7 @@
         var body = document.body;
         if (themeFromElement(html) || themeFromElement(body)) return false;
         var painted = getOpaqueBackground(body) || getOpaqueBackground(html);
+        if (painted && isOwnGuardColor(painted)) painted = null;
         if (painted && hasSubstantialContent() && ((isDarkColor(painted) ? 'dark' : 'light') === stored)) return false;
         if (!stylesReadyAt) return true;
         return Date.now() - stylesReadyAt < THEME_GRACE_MS;
@@ -514,66 +767,50 @@
         if (!isShown(html) || !isShown(body)) return false;
         if (waitingForStoredTheme()) return false;
         if (!hasSubstantialContent()) return false;
-        // Dark overlay must not lift onto a default-white / unpainted body.
+        // Keep the html/body canvas up until the site's own dark first screen
+        // exists. The guard itself is not a covering overlay, so leaving it a
+        // little longer cannot freeze a logged-in app the way a full-viewport
+        // node could.
         if (resolveScheme() === 'dark' && !hasDarkPagePaint()) return false;
         return true;
     }
 
     function buildCss(scheme, color) {
-        var schemeValue = scheme === 'dark' ? 'dark' : 'light';
-        var fallback = schemeValue === 'dark' ? DARK_FALLBACK : LIGHT_FALLBACK;
-        var bg = color && isSafeCssColor(color) ? color : null;
-        var bgRules = bg
-            ? '  background-color: ' + bg + ' !important;'
-            : [
-                '  background-color: ' + fallback + ' !important;',
-                '  background-color: Canvas !important;'
+        if (scheme !== 'dark') {
+            return [
+                'html, body {',
+                '  color-scheme: light;',
+                '  background-color: ' + LIGHT_FALLBACK + ' !important;',
+                '}'
             ].join('\n');
+        }
+        // Mirror Dark Reader inject/fallback.ts plus the user-agent html canvas.
+        // Keep descendants covered until the site's own dark first screen exists,
+        // then drop this stylesheet entirely.
         return [
-            '@layer dmpp-awf { html { color-scheme: ' + schemeValue + '; } }',
-            '#' + OVERLAY_ID + ' {',
-            '  position: fixed !important;',
-            '  inset: 0 !important;',
-            '  width: 100% !important;',
-            '  height: 100% !important;',
-            '  max-width: none !important;',
-            '  max-height: none !important;',
-            '  margin: 0 !important;',
-            '  padding: 0 !important;',
-            '  border: 0 !important;',
-            '  display: block !important;',
-            '  visibility: visible !important;',
-            '  pointer-events: none !important;',
-            '  z-index: 2147483647 !important;',
-            '  color-scheme: ' + schemeValue + ' !important;',
-            bgRules,
-            '  contain: paint !important;',
-            '  isolation: isolate !important;',
-            '  filter: none !important;',
-            '  transform: translateZ(0);',
-            '  transition: opacity ' + FADE_MS + 'ms ease-out;',
+            'html, body, body :not(iframe) {',
+            '  background-color: ' + DARK_FALLBACK + ' !important;',
+            '  border-color: ' + DARK_FALLBACK_BORDER + ' !important;',
+            '  color: ' + DARK_FALLBACK_TEXT + ' !important;',
+            '}',
+            'html, body {',
+            '  opacity: 1 !important;',
+            '  transition: none !important;',
+            '}',
+            'html {',
+            '  background-color: ' + DARK_FALLBACK + ' !important;',
+            '  color-scheme: dark !important;',
+            '}',
+            'iframe {',
+            '  color-scheme: dark !important;',
             '}'
         ].join('\n');
     }
 
     function placeStyle(parent) {
-        if (parent === document.head) {
-            var before = parent.firstChild;
-            while (
-                before &&
-                before.nodeType === 1 &&
-                (
-                    before.tagName === 'META' ||
-                    before.tagName === 'TITLE' ||
-                    (before.tagName === 'LINK' && String(before.rel).toLowerCase() === 'icon')
-                )
-            ) {
-                before = before.nextSibling;
-            }
-            parent.insertBefore(styleEl, before);
-            return;
-        }
-        parent.insertBefore(styleEl, parent.firstChild);
+        // Dark Reader appends fallback/user-agent sheets to head (or html if
+        // head is missing). Later site CSS without !important still loses.
+        parent.appendChild(styleEl);
     }
 
     function ensureStyle() {
@@ -582,35 +819,30 @@
         if (!styleEl) {
             styleEl = document.createElement('style');
             styleEl.id = STYLE_ID;
+            styleEl.media = 'screen';
+        } else if (!styleEl.media) {
+            styleEl.media = 'screen';
         }
-        if (styleEl.parentNode !== parent) placeStyle(parent);
+        if (styleEl.parentNode !== parent) {
+            if (styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
+            placeStyle(parent);
+        }
     }
 
     function ensureOverlay() {
-        var parent = document.documentElement;
-        if (!parent || isOverlayHidden) return;
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = OVERLAY_ID;
-            overlay.setAttribute('aria-hidden', 'true');
-            overlay.setAttribute('data-darkreader-ignore', '');
-        }
-        if (overlay.parentNode !== parent) parent.appendChild(overlay);
+        // Do not create a full-viewport overlay node. Removing that layer can
+        // leave Arc/Chromium webviews unpainted. White flash is covered by a
+        // temporary html/body canvas color, then kicked into a real paint on finish.
+        if (overlay) removeOverlayNode();
     }
 
     function applyVisuals(scheme, color) {
+        // A genuine light page must be able to restore its own document canvas;
+        // otherwise the tiny boot path would turn a light marketing page dark.
+        if (scheme === 'light') clearEarlyRootVisuals();
         ensureStyle();
         ensureOverlay();
         if (styleEl) styleEl.textContent = buildCss(scheme, color);
-        if (!overlay) return;
-
-        var schemeValue = scheme === 'dark' ? 'dark' : 'light';
-        var fallback = schemeValue === 'dark' ? DARK_FALLBACK : LIGHT_FALLBACK;
-        overlay.style.setProperty('pointer-events', 'none', 'important');
-        overlay.style.setProperty('color-scheme', schemeValue, 'important');
-        overlay.style.setProperty('background-color', fallback, 'important');
-        overlay.style.setProperty('background-color', color && isSafeCssColor(color) ? color : 'Canvas', 'important');
-        overlay.style.setProperty('opacity', isOverlayHidden ? '0' : '1', 'important');
     }
 
     function syncVisuals() {
@@ -654,6 +886,7 @@
             attributes: true,
             attributeFilter: THEME_ATTRS
         });
+        applyEarlyBodyVisuals();
         ensurePaintWatch();
     }
 
@@ -708,6 +941,97 @@
         docObserver = null;
     }
 
+    function restoreRootStyle(root, name, previous) {
+        if (!root) return;
+        if (previous) root.style.setProperty(name, previous);
+        else root.style.removeProperty(name);
+    }
+
+    // Arc can leave a tab unpainted after the guard canvas is removed until
+    // DevTools docks and resizes the webview. Mimic that resize without
+    // leaving color-scheme or a dyed html background behind. Avoid
+    // display:none: it can blank the same webview we are trying to wake.
+    function kickCompositor() {
+        var gen = ++kickGen;
+        try {
+            var root = document.documentElement;
+            var body = document.body;
+            if (!root) return;
+            var x = window.scrollX || 0;
+            var y = window.scrollY || 0;
+            var prevFilter = root.style.getPropertyValue('filter');
+            var prevTransform = root.style.getPropertyValue('transform');
+            var prevMinHeight = root.style.getPropertyValue('min-height');
+            var prevOverflow = root.style.getPropertyValue('overflow');
+            var prevZoom = root.style.getPropertyValue('zoom');
+            var prevWillChange = root.style.getPropertyValue('will-change');
+
+            root.style.setProperty('filter', 'opacity(0.999)');
+            root.style.setProperty('transform', 'translateZ(0)');
+            root.style.setProperty('min-height', ((window.innerHeight || 0) + 1) + 'px');
+            root.style.setProperty('overflow', 'auto');
+            root.style.setProperty('zoom', '1.001');
+            root.style.setProperty('will-change', 'transform, opacity');
+            void root.offsetWidth;
+            void root.offsetHeight;
+            if (body) {
+                void body.offsetHeight;
+                void body.getBoundingClientRect();
+            }
+            try { window.scrollTo(x, y + 1); } catch (error) {}
+            try { window.scrollTo(x, y); } catch (error) {}
+            try {
+                var probe = document.createElement('canvas');
+                probe.width = 1;
+                probe.height = 1;
+                probe.setAttribute('aria-hidden', 'true');
+                probe.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none;';
+                root.appendChild(probe);
+                var ctx = probe.getContext && probe.getContext('2d');
+                if (ctx) {
+                    ctx.fillStyle = '#181a1b';
+                    ctx.fillRect(0, 0, 1, 1);
+                }
+                void probe.getBoundingClientRect();
+                if (probe.parentNode) probe.parentNode.removeChild(probe);
+            } catch (error) {}
+
+            restoreRootStyle(root, 'filter', prevFilter);
+            restoreRootStyle(root, 'transform', prevTransform);
+            restoreRootStyle(root, 'min-height', prevMinHeight);
+            restoreRootStyle(root, 'overflow', prevOverflow);
+            restoreRootStyle(root, 'zoom', prevZoom);
+            restoreRootStyle(root, 'will-change', prevWillChange);
+            void root.offsetHeight;
+            try { window.dispatchEvent(new Event('resize')); } catch (error) {}
+        } catch (error) {}
+
+        if (typeof requestAnimationFrame === 'function') {
+            requestAnimationFrame(function () {
+                if (gen !== kickGen) return;
+                try {
+                    var root = document.documentElement;
+                    if (root) void root.offsetHeight;
+                    try { window.dispatchEvent(new Event('resize')); } catch (error) {}
+                } catch (error) {}
+            });
+        }
+    }
+
+    function clearCompositorKicks() {
+        for (var i = 0; i < kickTimers.length; i++) clearTimeout(kickTimers[i]);
+        kickTimers = [];
+    }
+
+    function scheduleCompositorKicks() {
+        clearCompositorKicks();
+        kickCompositor();
+        var delays = [16, 32, 80, 200, 480, 1000, 1800, 2800];
+        for (var i = 0; i < delays.length; i++) {
+            kickTimers.push(setTimeout(kickCompositor, delays[i]));
+        }
+    }
+
     function removeOverlayNode() {
         if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
         overlay = null;
@@ -716,6 +1040,28 @@
     function removeStyleNode() {
         if (styleEl && styleEl.parentNode) styleEl.parentNode.removeChild(styleEl);
         styleEl = null;
+        try {
+            var leftover = document.getElementById(STYLE_ID);
+            if (leftover && leftover.parentNode) leftover.parentNode.removeChild(leftover);
+        } catch (error) {}
+        clearEarlyRootVisuals();
+    }
+
+    function applyEarlyBodyVisuals() {
+        // Dark Reader pads body through the fallback stylesheet, not inline styles.
+    }
+
+    function clearEarlyRootVisuals() {
+        if (!earlyRootVisuals) return;
+        if (earlyRoot) {
+            earlyRoot.style.removeProperty('background-color');
+            earlyRoot.style.removeProperty('color-scheme');
+        }
+        if (document.body) {
+            document.body.style.removeProperty('background-color');
+            document.body.style.removeProperty('color-scheme');
+        }
+        earlyRootVisuals = false;
     }
 
     function hideOverlay() {
@@ -729,28 +1075,29 @@
         fadeTimer = setTimeout(removeOverlayNode, FADE_MS + 80);
     }
 
-    function finish(instant) {
+    function dropGuardCanvas() {
+        clearTimeout(fadeTimer);
+        clearTimeout(styleTimer);
+        fadeTimer = null;
+        styleTimer = null;
+        isOverlayHidden = true;
+        removeOverlayNode();
+        removeStyleNode();
+        scheduleCompositorKicks();
+    }
+
+    function finish(instant, force) {
         if (isDone) {
-            if (instant) {
-                clearTimeout(fadeTimer);
-                clearTimeout(styleTimer);
-                removeOverlayNode();
-                removeStyleNode();
-            }
+            if (instant) dropGuardCanvas();
             return;
         }
+        // Unforced finishes still require a ready first screen so a dark cover
+        // is not dropped onto a still-white SPA canvas. Forced timeouts may
+        // lift after that wait; they must never leave the canvas up forever.
+        if (!instant && !force && !isFirstScreenReady()) return;
         isDone = true;
         cleanupWatchers();
-        if (instant || reducedMotion()) {
-            isOverlayHidden = true;
-            clearTimeout(fadeTimer);
-            clearTimeout(styleTimer);
-            removeOverlayNode();
-            removeStyleNode();
-            return;
-        }
-        hideOverlay();
-        styleTimer = setTimeout(removeStyleNode, FADE_MS + 90);
+        dropGuardCanvas();
     }
 
     function scheduleFinish() {
@@ -783,15 +1130,23 @@
     function onDomReady() {
         snapshotStyleLinks();
         ensurePaintWatch();
+        if (document.readyState === 'complete' && !pageLoadedAt) pageLoadedAt = Date.now();
         tick();
     }
 
     function onLoad() {
+        pageLoadedAt = Date.now();
         tick();
     }
 
     function onPageShow(event) {
         if (event && event.persisted) finish(true);
+        else kickCompositor();
+    }
+
+    function onVisibilityChange() {
+        if (document.visibilityState !== 'visible') return;
+        kickCompositor();
     }
 
     function isDarkReaderActive() {
@@ -818,22 +1173,48 @@
         finish(true);
     }
 
+    function bootstrapDarkVisuals() {
+        if (!document.documentElement) return;
+        // This is deliberately synchronous at document-start. The style gives
+        // the document canvas a dark backing color before the overlay can paint.
+        lastScheme = 'dark';
+        lastColor = null;
+        applyVisuals('dark', null);
+    }
+
     function start() {
         if (systemScheme() !== 'dark') return;
-        if (isDarkReaderActive()) return;
+        if (isDarkReaderActive()) {
+            removeStyleNode();
+            scheduleCompositorKicks();
+            return;
+        }
+        bootstrapDarkVisuals();
+        scheduleCompositorKicks();
+        // Arm the hard deadline before any later setup that might throw.
+        hardMaxTimer = setTimeout(function () {
+            if (isDone) return;
+            finish(true);
+        }, HARD_MAX_MS);
         bindMedia(colorSchemeMedia, tick);
         bindMedia(reducedMotionMedia, tick);
         waitForHtml();
         pollTimer = setInterval(tick, POLL_MS);
         overlayMaxTimer = setTimeout(function () {
             if (isDone) return;
-            if (!hasSubstantialContent()) return;
-            finish(false);
+            tick();
+            if (isFirstScreenReady()) {
+                scheduleFinish();
+                return;
+            }
+            // The first screen is already populated. Do not wait forever for a
+            // perfect dark-paint sample (logged-in SPA shells often never pass).
+            if (hasSubstantialContent()) finish(true);
         }, OVERLAY_MAX_MS);
-        hardMaxTimer = setTimeout(function () { finish(true); }, HARD_MAX_MS);
         document.addEventListener('DOMContentLoaded', onDomReady);
         window.addEventListener('load', onLoad);
         window.addEventListener('pageshow', onPageShow);
+        document.addEventListener('visibilitychange', onVisibilityChange);
         if (document.readyState !== 'loading') onDomReady();
         tick();
     }
