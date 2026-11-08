@@ -2,9 +2,9 @@
 // @name         通用防白闪
 // @name:en      Anti White Flash
 // @namespace    dark-mode-plus-plus.anti-white-flash
-// @version      1.0.34
-// @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫一次 #181a1b，不盖整页罩、也不给子节点刷色。垫色只写一次，避免登录态被反复改样式罩住。看见站点自己的大块深色界面或确认浅色页就撤垫；检测时不关掉垫色，超时也不揭还白着的深色 SPA。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
-// @description:en Follows Dark Reader's document-start canvas pad: colors html/body once with #181a1b, without a full-page overlay, descendant paint, or rewriting the sheet every tick. Drops once a large on-screen dark shell exists or the page is confirmed light. Detection never disables the pad, and timeouts never uncover a still-white dark SPA. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
+// @version      1.0.35
+// @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫一次 #181a1b，不盖整页罩、也不给子节点刷色。确认是深色站就停手，垫色留着当画布；确认浅色才撤垫。检测时不关掉垫色，超时也不揭开，避免登录态被反复探测罩住。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
+// @description:en Follows Dark Reader's document-start canvas pad: colors html/body once with #181a1b, without a full-page overlay or descendant paint. Parks on a declared-dark site and keeps the canvas; drops only for a confirmed light page. Detection never disables the pad, and timeouts park instead of uncovering. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
 // @author       Dark Mode++
 // @match        *://*/*
 // @run-at       document-start
@@ -24,7 +24,7 @@
     try {
         if (window.__dmppAwfActive) return;
         window.__dmppAwfActive = true;
-        window.__dmppAwfVersion = '1.0.34';
+        window.__dmppAwfVersion = '1.0.35';
     } catch (error) {}
 
     // Keep this boot path deliberately tiny and before every helper declaration.
@@ -172,6 +172,9 @@
     var initialStyleLinks = null;
     var boundLinks = typeof WeakSet === 'function' ? new WeakSet() : [];
     var isDone = false;
+    var isParked = false;
+    var parkObserver = null;
+    var parkTimers = [];
     var isOverlayHidden = false;
     var hasPainted = false;
     var paintStarted = false;
@@ -504,10 +507,11 @@
     function hasDarkPagePaint() {
         // Class / color-scheme can appear while the canvas is still white
         // (Telegram adds theme-dark before its CSS paints; Chromium also
-        // reports color-scheme: dark from prefers-color-scheme). Only a real
-        // dark surface is safe to uncover.
+        // reports color-scheme: dark from prefers-color-scheme). Use this
+        // only to stop probing, never to uncover a still-white page.
         // Never disable the pad here: polling that trick is a white flash on
-        // slow dark SPAs such as Telegram.
+        // slow dark SPAs such as Telegram. Skip elementsFromPoint: Arc
+        // already freezes when that path runs every poll.
         var painted = getOpaqueBackground(document.body) ||
             getOpaqueBackground(document.documentElement);
         if (painted && isDarkColor(painted) && !isOwnGuardColor(painted)) {
@@ -516,10 +520,6 @@
         }
         if (getDarkPaintedShell()) {
             awfDebug.paint = 'shell';
-            return true;
-        }
-        if (getVisibleDarkSurface()) {
-            awfDebug.paint = 'viewport';
             return true;
         }
         awfDebug.paint = '';
@@ -1052,26 +1052,33 @@
         });
     }
 
+    function isDeclaredDark() {
+        return themeFromElement(document.documentElement) === 'dark' ||
+            themeFromElement(document.body) === 'dark' ||
+            getStoredTheme() === 'dark' ||
+            themeFromMeta() === 'dark';
+    }
+
     function firstScreenBlocker() {
         var html = document.documentElement;
         var body = document.body;
         if (!html || !body) return 'no-root';
         if (!isShown(html) || !isShown(body)) return 'hidden';
-        if (!hasSubstantialContent()) return 'content';
-        // A real dark first screen is enough. Discord injects hundreds of CSS
-        // chunks and stays on readyState=loading long after Friends exists.
-        // Waiting for that keeps the pad up and Arc freezes on the pad layer.
-        if (resolveScheme() === 'dark') {
-            if (!hasDarkPagePaint()) {
-                return document.readyState === 'loading' ? 'loading' : 'dark-paint';
-            }
+        // Dark Reader pads once and then gets out of the way. Waiting for a
+        // perfect dark first-screen sample after the overlay countdown was
+        // removed is what froze Discord/Telegram on the pad.
+        if (isDeclaredDark()) return 'park';
+        if (isConfirmedLightPage()) {
+            if (document.readyState === 'loading') return 'loading';
+            if (!hasPainted) return 'paint';
+            if (!areStylesheetsReady()) return 'styles';
             return '';
         }
+        if (!hasSubstantialContent()) return 'content';
+        if (hasDarkPagePaint()) return 'park';
         if (document.readyState === 'loading') return 'loading';
-        if (!hasPainted) return 'paint';
-        if (!areStylesheetsReady()) return 'styles';
         if (waitingForStoredTheme()) return 'theme';
-        return '';
+        return 'wait';
     }
 
     function isFirstScreenReady() {
@@ -1130,9 +1137,9 @@
 
     function applyVisuals(scheme, color) {
         var css;
-        // A genuine light page must be able to restore its own document canvas;
-        // otherwise the tiny boot path would turn a light marketing page dark.
-        if (scheme === 'light') clearEarlyRootVisuals();
+        // Keep the Dark Reader canvas until finish() removes it. Restyling to
+        // white !important is another overlay and a freeze on logged-in SPAs.
+        if (scheme === 'light') return;
         ensureStyle();
         ensureOverlay();
         css = buildCss(scheme, color);
@@ -1143,13 +1150,11 @@
 
     function syncVisuals() {
         var scheme = resolveScheme();
-        var color = getOverlayColor(scheme);
-        if (scheme !== lastScheme || color !== lastColor) {
+        if (scheme !== lastScheme) {
             if (lastScheme !== null) noteSignal();
             lastScheme = scheme;
-            lastColor = color;
         }
-        applyVisuals(scheme, color);
+        applyVisuals(scheme, null);
     }
 
     function observeRoot() {
@@ -1368,24 +1373,81 @@
         fadeTimer = setTimeout(removeOverlayNode, FADE_MS + 80);
     }
 
+    function clearParkTimers() {
+        var i;
+        for (i = 0; i < parkTimers.length; i++) clearTimeout(parkTimers[i]);
+        parkTimers = [];
+    }
+
+    function parkedExitCheck() {
+        if (!isParked) return;
+        try {
+            if (isDarkReaderActive() || isConfirmedLightPage() || resolveScheme() === 'light') {
+                finish(true);
+            }
+        } catch (error) {
+            awfDebug.err = awfDebug.err || String(error && (error.stack || error.message) || error);
+        }
+    }
+
+    function bindParkedExits() {
+        function onParkedLoad() {
+            if (!pageLoadedAt) pageLoadedAt = Date.now();
+            parkedExitCheck();
+            parkTimers.push(setTimeout(parkedExitCheck, LIGHT_PAGE_GRACE_MS));
+        }
+        document.addEventListener('DOMContentLoaded', parkedExitCheck);
+        window.addEventListener('load', onParkedLoad);
+        if (document.readyState === 'complete') onParkedLoad();
+        else if (document.readyState !== 'loading') parkedExitCheck();
+        try {
+            if (parkObserver || !document.documentElement) return;
+            // Do not watch class/style: Discord mutates those constantly.
+            parkObserver = new MutationObserver(parkedExitCheck);
+            parkObserver.observe(document.documentElement, {
+                attributes: true,
+                attributeFilter: [
+                    'data-darkreader-mode',
+                    'data-darkreader-scheme'
+                ]
+            });
+        } catch (error) {}
+    }
+
+    function parkGuardCanvas() {
+        if (isDone) return;
+        try { applyVisuals('dark', null); } catch (error) {}
+        isDone = true;
+        isParked = true;
+        awfDebug.block = 'park';
+        cleanupWatchers();
+        bindParkedExits();
+    }
+
     function dropGuardCanvas() {
         clearTimeout(fadeTimer);
         clearTimeout(styleTimer);
         fadeTimer = null;
         styleTimer = null;
         isOverlayHidden = true;
+        isParked = false;
+        if (parkObserver) {
+            parkObserver.disconnect();
+            parkObserver = null;
+        }
+        clearParkTimers();
         removeOverlayNode();
         removeStyleNode();
         scheduleCompositorKicks();
     }
 
     function canUncoverStillWhitePad() {
-        // Light pages must be able to restore themselves. Dark/unknown canvases
-        // on a dark system keep the Dark Reader pad until the site itself paints
-        // dark, even if the SPA already has loading text.
+        // Timeouts may only restore a confirmed light page. Dark/unknown
+        // canvases keep the Dark Reader pad; parking stops the probe loop
+        // that looked like the old full-page cover.
         if (isConfirmedLightPage()) return true;
         if (resolveScheme() === 'light') return true;
-        return hasDarkPagePaint();
+        return false;
     }
 
     function finish(instant, force) {
@@ -1399,6 +1461,7 @@
         if (force && !canUncoverStillWhitePad()) return;
         if (!instant && !force && !isFirstScreenReady()) return;
         isDone = true;
+        isParked = false;
         cleanupWatchers();
         dropGuardCanvas();
     }
@@ -1418,7 +1481,7 @@
         }, wait);
     }
 
-    var awfDebug = { version: '1.0.34', ticks: 0, block: '', err: '', paint: '' };
+    var awfDebug = { version: '1.0.35', ticks: 0, block: '', err: '', paint: '' };
     try { window.__dmppAwfDebug = awfDebug; } catch (error) {}
 
     function tick() {
@@ -1435,6 +1498,10 @@
             awfDebug.block = firstScreenBlocker() || 'ready';
             if (awfDebug.block === 'ready') {
                 finish(true);
+                return;
+            }
+            if (awfDebug.block === 'park') {
+                parkGuardCanvas();
                 return;
             }
             syncVisuals();
@@ -1508,35 +1575,32 @@
         bootstrapDarkVisuals();
         // Do not kick the compositor while the pad is still up. filter/zoom
         // on html during Discord boot freezes the webview as a solid gray.
-        // These deadlines only retry detection. They must not uncover a still-
-        // white dark SPA the way a full-viewport overlay used to time out:
-        // that overlay was the cover; this pad is only the canvas color.
-        // If the site's own dark or light first screen is already painted,
-        // drop even when mutation observers keep postponing settle.
-        hardMaxTimer = setTimeout(function () {
+        // Deadlines may restore a confirmed light page. Otherwise they park:
+        // keep the canvas color and stop probing, the way Dark Reader leaves
+        // its fallback until the real theme exists. Never uncover a still-
+        // white dark SPA the way a full-viewport overlay used to time out.
+        function tryDeadline() {
+            if (isParked) {
+                parkedExitCheck();
+                return;
+            }
             if (isDone) return;
             try { tick(); } catch (error) {}
-            if (isDone) return;
+            if (isDone || isParked) return;
             try {
                 if (canUncoverStillWhitePad()) finish(true, true);
+                else parkGuardCanvas();
             } catch (error) {
                 awfDebug.err = awfDebug.err || String(error && (error.stack || error.message) || error);
+                try { parkGuardCanvas(); } catch (parkError) {}
             }
-        }, HARD_MAX_MS);
+        }
+        hardMaxTimer = setTimeout(tryDeadline, HARD_MAX_MS);
         bindMedia(colorSchemeMedia, tick);
         bindMedia(reducedMotionMedia, tick);
         waitForHtml();
         pollTimer = setInterval(tick, POLL_MS);
-        overlayMaxTimer = setTimeout(function () {
-            if (isDone) return;
-            try { tick(); } catch (error) {}
-            if (isDone) return;
-            try {
-                if (canUncoverStillWhitePad()) finish(true, true);
-            } catch (error) {
-                awfDebug.err = awfDebug.err || String(error && (error.stack || error.message) || error);
-            }
-        }, OVERLAY_MAX_MS);
+        overlayMaxTimer = setTimeout(tryDeadline, OVERLAY_MAX_MS);
         document.addEventListener('DOMContentLoaded', onDomReady);
         window.addEventListener('load', onLoad);
         window.addEventListener('pageshow', onPageShow);
