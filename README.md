@@ -25,9 +25,9 @@ Violentmonkey 用户脚本：在网页首屏真正可见前，用跟随系统/�
 
 ## 出现 / 消失
 
-- **出现**：仅在系统深色（`prefers-color-scheme: dark`）时工作。系统浅色直接跳过。检测到 Dark Reader（`data-darkreader-mode` / `.darkreader--fallback` 等）时也跳过，已经在跑则立刻撤掉底色，不和它叠盖。系统深色且没有 Dark Reader 时，脚本按 Dark Reader 的 `document-start` 画布垫色注入一份 `style[media=screen]`：只给 `html, body` 垫 `#181a1b`，并给 `html` 加上 `color-scheme: dark`。不给子节点刷色，也不盖全屏罩，所以 Discord 这类已画出的登录页不会被整页挡住。Telegram 慢加载时，浏览器白画布仍是深色。不按网站黑名单排除。
+- **出现**：仅在系统深色（`prefers-color-scheme: dark`）时工作。系统浅色直接跳过。检测到 Dark Reader（`data-darkreader-mode` / `.darkreader--fallback` 等）时也跳过，已经在跑则立刻撤掉底色，不和它叠盖。系统深色且没有 Dark Reader 时，脚本按 Dark Reader 的 `document-start` 画布垫色注入一份 `style[media=screen]`：给 `html, body` 垫 `#181a1b`，不设 `color-scheme`。只垫画布，不给子节点刷色，也不盖全屏罩，所以 Discord 登录页能正常画出来。只垫 `body` 会让 Telegram 的 `html` 在慢加载时漏白。不按网站黑名单排除。
 - **颜色**：按页面 `class` / `data-*` / 本地存储 / `meta color-scheme` 判断；这些还没有时，等首批 CSS 读到不透明背景再对齐；再没有则跟随系统 `prefers-color-scheme`。不会在深色站点上先盖一层白，也不会在已判明的浅色站点上先盖一层黑。
-- **消失**：看见站点自己的深色首屏（不只是 `theme-dark` 这类 class）就立刻撤掉垫色，再触发几次轻微重绘（滚动 1px、`resize`、短暂 `transform` / `zoom`、1px canvas），避免 Arc 在撤掉底色后不再画。铺上深色底时也会立刻点一次重绘，切回标签时再点一次，免得 Arc 一直停在浏览器自带的白底上。空的 SPA 壳（例如只有 `#root`、没有文案）不算首屏。判断浅色站时会像 Dark Reader 一样暂时关掉这份样式再采样，内层已经是白底内容就马上还回浅色，不会把营销页长期染黑。若存储里已有主题但 DOM 还没跟上，最多再等约 400ms。超时只再试一次揭开：已经画出的深色首屏会撤垫；还白着的空页继续垫着，避免 Telegram 慢加载漏白。垫的是 html/body 画布，不是整页罩，所以已画出的 Discord 界面仍能露出来。
+- **消失**：看见站点自己的大块深色界面（不只是 `theme-dark` 这类 class，也不只靠点选屏幕像素）就立刻撤掉垫色。检测时不关掉垫色，避免 Telegram 慢加载漏白。Arc 冻住时窗口尺寸和元素矩形可能是空的，会改用元素自己的宽高来认这块深色界面，好立刻撤垫。撤垫后不再改版心、滚动或发 `resize`：这些会把 Discord 卡在加载里。深色垫不设 `color-scheme`，也不给页面壳加 `opacity` / `filter` / `zoom` / `will-change` / `transform`。空的 SPA 壳（例如只有 `#root`、没有文案）不算首屏。判断浅色站时，等页面加载完成后再像 Dark Reader 一样短暂关掉这份样式看一次真实底色；内层已经是白底内容会马上还回浅色，不会把营销页长期染黑。若存储里已有主题但 DOM 还没跟上，最多再等约 400ms。超时只再试一次揭开：已经画出的深色首屏会撤垫；还白着的空页继续垫着。
 
 ## 已知限制
 
@@ -36,7 +36,7 @@ Violentmonkey 用户脚本：在网页首屏真正可见前，用跟随系统/�
 - 主题只由很晚的异步脚本决定时，仍可能在超时后露出短暂 FOUC。
 - 不处理 iframe，也不改站点自己的长期主题。
 - 其他没有 Dark Reader 标记的整页改色扩展，仍可能和垫色叠在一起。
-- 超长 loading 时 html/body 会继续垫着深色底，直到站点自己的深色首屏画出来；已经画出的界面不会被罩住。
+- 超长 loading 时 html/body 会继续垫着深色底，直到站点自己的大块深色界面出现；已经画出的界面不会被罩住。
 
 ## 仓库结构
 

@@ -2,9 +2,9 @@
 // @name         通用防白闪
 // @name:en      Anti White Flash
 // @namespace    dark-mode-plus-plus.anti-white-flash
-// @version      1.0.21
-// @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫 #181a1b，不盖整页罩、也不给子节点刷色。看见站点自己的深色首屏就撤垫色；空着的白页超时也不会提前露出来。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
-// @description:en Follows Dark Reader's document-start canvas pad: colors html/body with #181a1b and color-scheme: dark, without a full-page overlay or descendant !important paint. Drops once the site's own dark first screen paints. Timeouts never uncover an empty still-white page. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
+// @version      1.0.32
+// @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫 #181a1b，不盖整页罩、也不给子节点刷色。看见站点自己的大块深色界面就撤垫色；检测时不关掉垫色，避免 Telegram 慢加载漏白。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
+// @description:en Follows Dark Reader's document-start canvas pad: colors html/body with #181a1b, without a full-page overlay or descendant paint. Drops once a large on-screen dark shell exists. Detection never disables the pad, so a slow Telegram load does not flash white. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
 // @author       Dark Mode++
 // @match        *://*/*
 // @run-at       document-start
@@ -24,7 +24,7 @@
     try {
         if (window.__dmppAwfActive) return;
         window.__dmppAwfActive = true;
-        window.__dmppAwfVersion = '1.0.21';
+        window.__dmppAwfVersion = '1.0.32';
     } catch (error) {}
 
     // Keep this boot path deliberately tiny and before every helper declaration.
@@ -70,15 +70,12 @@
             // paints `body :not(iframe)`, but that sheet is replaced by the
             // real inversion immediately. Keeping descendant !important paint
             // here is a full-page cover: Discord's UI never shows through.
+            // color-scheme must not be !important: Arc then freezes Discord
+            // as a solid gray until DevTools docks. Body-only pad still lets
+            // Telegram's html canvas leak white during a slow load.
             earlyStyle.textContent = [
                 'html, body {',
                 '    background-color: #181a1b !important;',
-                '    opacity: 1 !important;',
-                '    transition: none !important;',
-                '}',
-                'html {',
-                '    background-color: #181a1b !important;',
-                '    color-scheme: dark !important;',
                 '}'
             ].join('\n');
             if (document.head) {
@@ -101,12 +98,8 @@
         } catch (error) {
             earlyStyle = null;
         }
-        // Nudge Arc to composite this dark canvas. Without a layer change,
-        // some webviews stay on the browser's white backing until a later paint.
         try {
-            earlyRoot.style.setProperty('transform', 'translateZ(0)');
             void earlyRoot.offsetHeight;
-            earlyRoot.style.removeProperty('transform');
         } catch (error) {}
     }
 
@@ -118,10 +111,10 @@
     var SETTLE_MS = 120;
     var THEME_GRACE_MS = 400;
     var LIGHT_PAGE_GRACE_MS = 700;
-    var POLL_MS = 50;
+    var POLL_MS = 120;
     var OVERLAY_MAX_MS = 3200;
     var HARD_MAX_MS = 5000;
-    var DARK_SURFACE_CACHE_MS = 80;
+    var DARK_SURFACE_CACHE_MS = 240;
     var LIGHT_FALLBACK = '#ffffff';
     var DARK_FALLBACK = '#181a1b';
 
@@ -168,10 +161,12 @@
     var finishTimer = null;
     var overlayMaxTimer = null;
     var hardMaxTimer = null;
+    var tickSoonTimer = null;
     var fadeTimer = null;
     var styleTimer = null;
     var kickTimers = [];
-    var kickGen = 0;
+    var kickHoldTimer = null;
+    var kickHeld = [];
     var observedBody = null;
     var initialStyleLinks = null;
     var boundLinks = typeof WeakSet === 'function' ? new WeakSet() : [];
@@ -186,6 +181,16 @@
     var pageLoadedAt = 0;
     var viewportSampleAt = 0;
     var viewportSample = null;
+    var shellSampleAt = 0;
+    var shellSample = null;
+
+    function tickSoon() {
+        if (isDone || tickSoonTimer) return;
+        tickSoonTimer = setTimeout(function () {
+            tickSoonTimer = null;
+            tick();
+        }, 80);
+    }
 
     function tokenSet(list) {
         var out = Object.create(null);
@@ -475,6 +480,8 @@
             }
             viewportSample = null;
             viewportSampleAt = 0;
+            shellSample = null;
+            shellSampleAt = 0;
             try {
                 if (document.documentElement) document.documentElement.offsetHeight;
             } catch (error) {}
@@ -498,14 +505,24 @@
         // (Telegram adds theme-dark before its CSS paints; Chromium also
         // reports color-scheme: dark from prefers-color-scheme). Only a real
         // dark surface is safe to uncover.
-        return withGuardDisabled(function () {
-            var painted = getOpaqueBackground(document.body) ||
-                getOpaqueBackground(document.documentElement);
-            if (painted && isDarkColor(painted) && !isOwnGuardColor(painted)) return true;
-            // Some SPAs keep body/html white forever and paint their real shell one
-            // level down. Do not mistake that white document canvas for the screen.
-            return !!getVisibleDarkSurface();
-        });
+        // Never disable the pad here: polling that trick is a white flash on
+        // slow dark SPAs such as Telegram.
+        var painted = getOpaqueBackground(document.body) ||
+            getOpaqueBackground(document.documentElement);
+        if (painted && isDarkColor(painted) && !isOwnGuardColor(painted)) {
+            awfDebug.paint = 'root';
+            return true;
+        }
+        if (getDarkPaintedShell()) {
+            awfDebug.paint = 'shell';
+            return true;
+        }
+        if (getVisibleDarkSurface()) {
+            awfDebug.paint = 'viewport';
+            return true;
+        }
+        awfDebug.paint = '';
+        return false;
     }
 
     function getOpaqueBackground(el) {
@@ -563,42 +580,54 @@
     // This is viewport-based so an off-screen dark node cannot make a white first
     // screen look safe to reveal. html/body are skipped while this script is dyeing
     // them, otherwise every sample would just see the guard canvas.
+    function viewportSize() {
+        var root = document.documentElement;
+        var body = document.body;
+        var vw = window.innerWidth || (root && root.clientWidth) || (body && body.clientWidth) || 0;
+        var vh = window.innerHeight || (root && root.clientHeight) || (body && body.clientHeight) || 0;
+        return { vw: vw, vh: vh };
+    }
+
     function getViewportSample() {
         var now = Date.now();
         var sample;
+        var xs;
+        var ys;
+        var yi;
+        var xi;
+        var painted;
+        var size = viewportSize();
         if (now - viewportSampleAt < DARK_SURFACE_CACHE_MS && viewportSample) return viewportSample;
         sample = emptyViewportSample();
-        if (!document.body || !window.innerWidth || !window.innerHeight) {
+        if (!document.body || !size.vw || !size.vh) {
             viewportSampleAt = now;
             viewportSample = sample;
             return sample;
         }
-        // withGuardDisabled clears the cached sample so we must fill a local
-        // object. Using the cache field here used to throw and freeze the pad.
-        return withGuardDisabled(function () {
-            var xs = [0.16, 0.5, 0.84];
-            var ys = [0.16, 0.5, 0.84];
-            for (var yi = 0; yi < ys.length; yi++) {
-                for (var xi = 0; xi < xs.length; xi++) {
-                    var painted = opaqueBackdropAt(
-                        Math.max(1, Math.floor(window.innerWidth * xs[xi])),
-                        Math.max(1, Math.floor(window.innerHeight * ys[yi]))
-                    );
-                    if (!painted) continue;
-                    sample.total++;
-                    if (isDarkColor(painted)) {
-                        sample.dark++;
-                        if (!sample.darkColor) sample.darkColor = painted;
-                    } else if (isNearWhiteColor(painted)) {
-                        sample.light++;
-                        if (!sample.lightColor) sample.lightColor = painted;
-                    }
+        // Keep the pad enabled. Disabling it to hit-test is a white flash on
+        // a still-loading dark SPA. html/body are skipped while we dye them.
+        xs = [0.16, 0.5, 0.84];
+        ys = [0.16, 0.5, 0.84];
+        for (yi = 0; yi < ys.length; yi++) {
+            for (xi = 0; xi < xs.length; xi++) {
+                painted = opaqueBackdropAt(
+                    Math.max(1, Math.floor(size.vw * xs[xi])),
+                    Math.max(1, Math.floor(size.vh * ys[yi]))
+                );
+                if (!painted) continue;
+                sample.total++;
+                if (isDarkColor(painted)) {
+                    sample.dark++;
+                    if (!sample.darkColor) sample.darkColor = painted;
+                } else if (isNearWhiteColor(painted)) {
+                    sample.light++;
+                    if (!sample.lightColor) sample.lightColor = painted;
                 }
             }
-            viewportSampleAt = Date.now();
-            viewportSample = sample;
-            return sample;
-        });
+        }
+        viewportSampleAt = Date.now();
+        viewportSample = sample;
+        return sample;
     }
 
     function getVisibleDarkSurface() {
@@ -613,24 +642,146 @@
         return null;
     }
 
-    function isConfirmedLightPage(painted) {
+    function nodeOnscreenArea(el) {
+        var rect;
+        var size;
+        var vw;
+        var vh;
+        var width;
+        var height;
+        try {
+            size = viewportSize();
+            vw = size.vw;
+            vh = size.vh;
+            if (!vw || !vh) return 0;
+            rect = el.getBoundingClientRect();
+            width = Math.min(rect.right, vw) - Math.max(rect.left, 0);
+            height = Math.min(rect.bottom, vh) - Math.max(rect.top, 0);
+            if (width > 0 && height > 0) return width * height;
+            // Frozen Arc webviews can report empty rects for an on-screen shell.
+            width = el.offsetWidth || el.clientWidth || 0;
+            height = el.offsetHeight || el.clientHeight || 0;
+            if (width <= 0 || height <= 0) return 0;
+            return Math.min(width, vw) * Math.min(height, vh);
+        } catch (error) {
+            return 0;
+        }
+    }
+
+    function isLargeShellNode(el, area, vw, vh, viewport) {
+        var rect;
+        var width;
+        var height;
+        if (!el || !vw || !vh || !viewport || area <= 0) return false;
+        if (area >= viewport * 0.16) return true;
+        width = el.offsetWidth || el.clientWidth || 0;
+        height = el.offsetHeight || el.clientHeight || 0;
+        try {
+            rect = el.getBoundingClientRect();
+            if (rect.width > 0) width = Math.max(width, rect.width);
+            if (rect.height > 0) height = Math.max(height, rect.height);
+        } catch (error) {}
+        if (height >= vh * 0.5 && width >= 64 && area >= viewport * 0.05) return true;
+        if (width >= vw * 0.5 && height >= 64 && area >= viewport * 0.05) return true;
+        return false;
+    }
+
+    // Arc can freeze the compositor so elementsFromPoint sees nothing even
+    // after Discord's Friends list exists. Walk large on-screen nodes and
+    // read their computed backgrounds instead; that works without turning
+    // the pad off.
+    function getDarkPaintedShell() {
+        var now = Date.now();
+        var body;
+        var vw;
+        var vh;
+        var viewport;
+        var darkArea;
+        var lightArea;
+        var darkColor;
+        var visited;
+        var maxVisit;
+        var roots;
+        var i;
+        function consider(el, depth) {
+            var area;
+            var color;
+            var kids;
+            var j;
+            if (!el || el.nodeType !== 1 || visited >= maxVisit || depth > 4) return;
+            if (isGuardNode(el) || isIgnorableTag(el.tagName)) return;
+            if (!isShown(el)) return;
+            area = nodeOnscreenArea(el);
+            if (area < 64 * 24) return;
+            visited += 1;
+            if (isLargeShellNode(el, area, vw, vh, viewport)) {
+                color = getOpaqueBackground(el);
+                if (color && !isOwnGuardColor(color)) {
+                    if (isDarkColor(color)) {
+                        darkArea += area;
+                        if (!darkColor) darkColor = color;
+                    } else if (isNearWhiteColor(color)) {
+                        lightArea += area;
+                    }
+                }
+            }
+            kids = el.children;
+            if (!kids) return;
+            for (j = 0; j < kids.length; j++) consider(kids[j], depth + 1);
+        }
+        if (now - shellSampleAt < DARK_SURFACE_CACHE_MS && shellSample !== null) return shellSample;
+        body = document.body;
+        vw = viewportSize().vw;
+        vh = viewportSize().vh;
+        viewport = vw * vh;
+        if (!body || !viewport) {
+            shellSampleAt = now;
+            shellSample = null;
+            return null;
+        }
+        darkArea = 0;
+        lightArea = 0;
+        darkColor = null;
+        visited = 0;
+        maxVisit = 24;
+        roots = body.children;
+        for (i = 0; i < roots.length; i++) consider(roots[i], 0);
+        if (!darkColor || (lightArea >= viewport * 0.18 && lightArea > darkArea) || darkArea < viewport * 0.16) {
+            shellSampleAt = Date.now();
+            shellSample = null;
+            return null;
+        }
+        shellSampleAt = Date.now();
+        shellSample = { color: darkColor, area: darkArea };
+        return shellSample;
+    }
+
+    function isConfirmedLightPage() {
         var html = document.documentElement;
         var body = document.body;
+        var sample;
+        var loadedFor;
         if (themeFromElement(html) === 'dark' || themeFromElement(body) === 'dark') return false;
         if (getStoredTheme() === 'dark') return false;
         if (!hasSubstantialContent() || !areStylesheetsReady()) return false;
-        if (getVisibleDarkSurface()) return false;
-        var sample = getViewportSample();
+        if (getDarkPaintedShell() || getVisibleDarkSurface()) return false;
+        sample = getViewportSample();
         if (sample.dark >= 3) return false;
         // Strong inner white content: a real light page, not an empty SPA shell.
         // Do not wait for window load; that would leave a light page dyed dark.
         if (sample.light >= 5 && (sample.total - sample.light) <= 2 && sample.light / sample.total >= 0.75) {
             return document.readyState !== 'loading';
         }
-        if (!painted || isOwnGuardColor(painted) || !isNearWhiteColor(painted)) return false;
+        // Only lift the pad after the light page has actually loaded. Doing
+        // this on every poll is a flicker; once is enough to see a white body.
         if (document.readyState !== 'complete') return false;
-        var loadedFor = pageLoadedAt ? Date.now() - pageLoadedAt : 0;
-        return loadedFor >= LIGHT_PAGE_GRACE_MS;
+        loadedFor = pageLoadedAt ? Date.now() - pageLoadedAt : 0;
+        if (loadedFor < LIGHT_PAGE_GRACE_MS) return false;
+        return withGuardDisabled(function () {
+            var painted = getOpaqueBackground(body) || getOpaqueBackground(html);
+            if (!painted || isOwnGuardColor(painted) || !isNearWhiteColor(painted)) return false;
+            return true;
+        });
     }
 
     function resolveScheme() {
@@ -659,7 +810,7 @@
             }
             // A complete, visibly white document with no dark shell is a real
             // light page (for example, a marketing page), not a dark SPA shell.
-            if (isConfirmedLightPage(painted)) return 'light';
+            if (isConfirmedLightPage()) return 'light';
         }
         return systemScheme();
     }
@@ -851,16 +1002,18 @@
         var html = document.documentElement;
         var body = document.body;
         if (!html || !body) return 'no-root';
-        if (document.readyState === 'loading') return 'loading';
         if (!isShown(html) || !isShown(body)) return 'hidden';
         if (!hasSubstantialContent()) return 'content';
         // A real dark first screen is enough. Discord injects hundreds of CSS
-        // chunks and never goes idle; waiting for rAF/styles/settle keeps the
-        // pad up after Friends is already painted.
+        // chunks and stays on readyState=loading long after Friends exists.
+        // Waiting for that keeps the pad up and Arc freezes on the pad layer.
         if (resolveScheme() === 'dark') {
-            if (!hasDarkPagePaint()) return 'dark-paint';
+            if (!hasDarkPagePaint()) {
+                return document.readyState === 'loading' ? 'loading' : 'dark-paint';
+            }
             return '';
         }
+        if (document.readyState === 'loading') return 'loading';
         if (!hasPainted) return 'paint';
         if (!areStylesheetsReady()) return 'styles';
         if (waitingForStoredTheme()) return 'theme';
@@ -880,17 +1033,9 @@
                 '}'
             ].join('\n');
         }
-        // Pad html/body like Dark Reader's canvas, never descendant paint.
-        // `body :not(iframe)` with !important is visually a full-page cover.
         return [
             'html, body {',
             '  background-color: ' + DARK_FALLBACK + ' !important;',
-            '  opacity: 1 !important;',
-            '  transition: none !important;',
-            '}',
-            'html {',
-            '  background-color: ' + DARK_FALLBACK + ' !important;',
-            '  color-scheme: dark !important;',
             '}'
         ].join('\n');
     }
@@ -955,7 +1100,7 @@
         if (!htmlObserver) {
             htmlObserver = new MutationObserver(function () {
                 observeBody();
-                tick();
+                tickSoon();
             });
             htmlObserver.observe(html, {
                 attributes: true,
@@ -1017,10 +1162,12 @@
         clearTimeout(finishTimer);
         clearTimeout(overlayMaxTimer);
         clearTimeout(hardMaxTimer);
+        clearTimeout(tickSoonTimer);
         pollTimer = null;
         finishTimer = null;
         overlayMaxTimer = null;
         hardMaxTimer = null;
+        tickSoonTimer = null;
         document.removeEventListener('DOMContentLoaded', onDomReady);
         window.removeEventListener('load', onLoad);
         window.removeEventListener('pageshow', onPageShow);
@@ -1040,89 +1187,71 @@
         else root.style.removeProperty(name);
     }
 
-    // Arc can leave a tab unpainted after the guard canvas is removed until
-    // DevTools docks and resizes the webview. Mimic that resize without
-    // leaving color-scheme or a dyed html background behind. Avoid
-    // display:none: it can blank the same webview we are trying to wake.
-    function kickCompositor() {
-        var gen = ++kickGen;
-        try {
-            var root = document.documentElement;
-            var body = document.body;
-            if (!root) return;
-            var x = window.scrollX || 0;
-            var y = window.scrollY || 0;
-            var prevFilter = root.style.getPropertyValue('filter');
-            var prevTransform = root.style.getPropertyValue('transform');
-            var prevMinHeight = root.style.getPropertyValue('min-height');
-            var prevOverflow = root.style.getPropertyValue('overflow');
-            var prevZoom = root.style.getPropertyValue('zoom');
-            var prevWillChange = root.style.getPropertyValue('will-change');
-
-            root.style.setProperty('filter', 'opacity(0.999)');
-            root.style.setProperty('transform', 'translateZ(0)');
-            root.style.setProperty('min-height', ((window.innerHeight || 0) + 1) + 'px');
-            root.style.setProperty('overflow', 'auto');
-            root.style.setProperty('zoom', '1.001');
-            root.style.setProperty('will-change', 'transform, opacity');
-            void root.offsetWidth;
-            void root.offsetHeight;
-            if (body) {
-                void body.offsetHeight;
-                void body.getBoundingClientRect();
+    function largestBodyChild() {
+        var body = document.body;
+        var best;
+        var bestArea;
+        var kids;
+        var i;
+        var el;
+        var area;
+        if (!body) return null;
+        best = body;
+        bestArea = 0;
+        kids = body.children;
+        for (i = 0; i < kids.length; i++) {
+            el = kids[i];
+            if (isGuardNode(el) || isIgnorableTag(el.tagName)) continue;
+            area = (el.offsetWidth || 0) * (el.offsetHeight || 0);
+            if (area > bestArea) {
+                bestArea = area;
+                best = el;
             }
-            try { window.scrollTo(x, y + 1); } catch (error) {}
-            try { window.scrollTo(x, y); } catch (error) {}
-            try {
-                var probe = document.createElement('canvas');
-                probe.width = 1;
-                probe.height = 1;
-                probe.setAttribute('aria-hidden', 'true');
-                probe.style.cssText = 'position:fixed;left:0;top:0;width:1px;height:1px;opacity:0.01;pointer-events:none;';
-                root.appendChild(probe);
-                var ctx = probe.getContext && probe.getContext('2d');
-                if (ctx) {
-                    ctx.fillStyle = '#181a1b';
-                    ctx.fillRect(0, 0, 1, 1);
-                }
-                void probe.getBoundingClientRect();
-                if (probe.parentNode) probe.parentNode.removeChild(probe);
-            } catch (error) {}
-
-            restoreRootStyle(root, 'filter', prevFilter);
-            restoreRootStyle(root, 'transform', prevTransform);
-            restoreRootStyle(root, 'min-height', prevMinHeight);
-            restoreRootStyle(root, 'overflow', prevOverflow);
-            restoreRootStyle(root, 'zoom', prevZoom);
-            restoreRootStyle(root, 'will-change', prevWillChange);
-            void root.offsetHeight;
-            try { window.dispatchEvent(new Event('resize')); } catch (error) {}
-        } catch (error) {}
-
-        if (typeof requestAnimationFrame === 'function') {
-            requestAnimationFrame(function () {
-                if (gen !== kickGen) return;
-                try {
-                    var root = document.documentElement;
-                    if (root) void root.offsetHeight;
-                    try { window.dispatchEvent(new Event('resize')); } catch (error) {}
-                } catch (error) {}
-            });
         }
+        return best;
+    }
+
+    function releaseHeldNudge() {
+        var i;
+        var item;
+        if (kickHoldTimer) {
+            clearTimeout(kickHoldTimer);
+            kickHoldTimer = null;
+        }
+        for (i = 0; i < kickHeld.length; i++) {
+            item = kickHeld[i];
+            restoreRootStyle(item.el, item.name, item.previous);
+        }
+        kickHeld = [];
+    }
+
+    function holdNudge(el, name, value) {
+        if (!el || !el.style) return;
+        kickHeld.push({
+            el: el,
+            name: name,
+            previous: el.style.getPropertyValue(name)
+        });
+        try { el.style.setProperty(name, value); } catch (error) {}
+    }
+
+    // Do not poke the page after the pad drops. Padding the app shell,
+    // scrolling, or dispatching resize during Discord boot can stall the
+    // renderer so Arc never attaches the document. html filter/zoom/
+    // will-change also promotes a stale gray layer. Leave the canvas alone.
+    function kickCompositor() {
+        releaseHeldNudge();
     }
 
     function clearCompositorKicks() {
-        for (var i = 0; i < kickTimers.length; i++) clearTimeout(kickTimers[i]);
+        var i;
+        for (i = 0; i < kickTimers.length; i++) clearTimeout(kickTimers[i]);
         kickTimers = [];
+        releaseHeldNudge();
     }
 
     function scheduleCompositorKicks() {
         clearCompositorKicks();
-        kickCompositor();
-        var delays = [16, 32, 80, 200, 480, 1000, 1800, 2800];
-        for (var i = 0; i < delays.length; i++) {
-            kickTimers.push(setTimeout(kickCompositor, delays[i]));
-        }
     }
 
     function removeOverlayNode() {
@@ -1221,7 +1350,7 @@
         }, wait);
     }
 
-    var awfDebug = { version: '1.0.21', ticks: 0, block: '', err: '' };
+    var awfDebug = { version: '1.0.32', ticks: 0, block: '', err: '', paint: '' };
     try { window.__dmppAwfDebug = awfDebug; } catch (error) {}
 
     function tick() {
@@ -1308,7 +1437,8 @@
             return;
         }
         bootstrapDarkVisuals();
-        scheduleCompositorKicks();
+        // Do not kick the compositor while the pad is still up. filter/zoom
+        // on html during Discord boot freezes the webview as a solid gray.
         // These deadlines only retry a reveal. They must not uncover a still-
         // white dark SPA the way a full-viewport overlay used to time out.
         // If the site's own dark first screen is already painted, force the
