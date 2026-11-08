@@ -2,9 +2,9 @@
 // @name         通用防白闪
 // @name:en      Anti White Flash
 // @namespace    dark-mode-plus-plus.anti-white-flash
-// @version      1.0.33
-// @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫 #181a1b，不盖整页罩、也不给子节点刷色。看见站点自己的大块深色界面就撤垫色；检测时不关掉垫色，避免 Telegram 慢加载漏白。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
-// @description:en Follows Dark Reader's document-start canvas pad: colors html/body with #181a1b, without a full-page overlay or descendant paint. Drops once a large on-screen dark shell exists. Detection never disables the pad, so a slow Telegram load does not flash white. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
+// @version      1.0.34
+// @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫一次 #181a1b，不盖整页罩、也不给子节点刷色。垫色只写一次，避免登录态被反复改样式罩住。看见站点自己的大块深色界面或确认浅色页就撤垫；检测时不关掉垫色，超时也不揭还白着的深色 SPA。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
+// @description:en Follows Dark Reader's document-start canvas pad: colors html/body once with #181a1b, without a full-page overlay, descendant paint, or rewriting the sheet every tick. Drops once a large on-screen dark shell exists or the page is confirmed light. Detection never disables the pad, and timeouts never uncover a still-white dark SPA. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
 // @author       Dark Mode++
 // @match        *://*/*
 // @run-at       document-start
@@ -24,7 +24,7 @@
     try {
         if (window.__dmppAwfActive) return;
         window.__dmppAwfActive = true;
-        window.__dmppAwfVersion = '1.0.33';
+        window.__dmppAwfVersion = '1.0.34';
     } catch (error) {}
 
     // Keep this boot path deliberately tiny and before every helper declaration.
@@ -156,6 +156,7 @@
     var styleEl = earlyStyle;
     var htmlObserver = null;
     var bodyObserver = null;
+    var bodyWaitObserver = null;
     var docObserver = null;
     var pollTimer = null;
     var finishTimer = null;
@@ -1128,12 +1129,16 @@
     }
 
     function applyVisuals(scheme, color) {
+        var css;
         // A genuine light page must be able to restore its own document canvas;
         // otherwise the tiny boot path would turn a light marketing page dark.
         if (scheme === 'light') clearEarlyRootVisuals();
         ensureStyle();
         ensureOverlay();
-        if (styleEl) styleEl.textContent = buildCss(scheme, color);
+        css = buildCss(scheme, color);
+        // Rewriting this sheet every poll restyles Discord/Telegram so Arc
+        // freezes on the pad, which looks like the old full-page cover.
+        if (styleEl && styleEl.textContent !== css) styleEl.textContent = css;
     }
 
     function syncVisuals() {
@@ -1152,7 +1157,6 @@
         if (!html) return;
         if (!htmlObserver) {
             htmlObserver = new MutationObserver(function () {
-                observeBody();
                 tickSoon();
             });
             htmlObserver.observe(html, {
@@ -1160,9 +1164,18 @@
                 attributeFilter: THEME_ATTRS.concat([
                     'data-darkreader-mode',
                     'data-darkreader-scheme'
-                ]),
-                childList: true
+                ])
             });
+        }
+        if (!document.body && !bodyWaitObserver) {
+            bodyWaitObserver = new MutationObserver(function () {
+                if (!document.body) return;
+                bodyWaitObserver.disconnect();
+                bodyWaitObserver = null;
+                observeBody();
+                tick();
+            });
+            bodyWaitObserver.observe(html, { childList: true });
         }
         observeBody();
     }
@@ -1228,9 +1241,11 @@
         unbindMedia(reducedMotionMedia, tick);
         if (htmlObserver) htmlObserver.disconnect();
         if (bodyObserver) bodyObserver.disconnect();
+        if (bodyWaitObserver) bodyWaitObserver.disconnect();
         if (docObserver) docObserver.disconnect();
         htmlObserver = null;
         bodyObserver = null;
+        bodyWaitObserver = null;
         docObserver = null;
     }
 
@@ -1403,7 +1418,7 @@
         }, wait);
     }
 
-    var awfDebug = { version: '1.0.33', ticks: 0, block: '', err: '', paint: '' };
+    var awfDebug = { version: '1.0.34', ticks: 0, block: '', err: '', paint: '' };
     try { window.__dmppAwfDebug = awfDebug; } catch (error) {}
 
     function tick() {
@@ -1414,6 +1429,7 @@
                 yieldToDarkReader();
                 return;
             }
+            observeBody();
             if (document.body) ensurePaintWatch();
             snapshotStyleLinks();
             awfDebug.block = firstScreenBlocker() || 'ready';
@@ -1492,9 +1508,10 @@
         bootstrapDarkVisuals();
         // Do not kick the compositor while the pad is still up. filter/zoom
         // on html during Discord boot freezes the webview as a solid gray.
-        // These deadlines only retry a reveal. They must not uncover a still-
-        // white dark SPA the way a full-viewport overlay used to time out.
-        // If the site's own dark first screen is already painted, force the
+        // These deadlines only retry detection. They must not uncover a still-
+        // white dark SPA the way a full-viewport overlay used to time out:
+        // that overlay was the cover; this pad is only the canvas color.
+        // If the site's own dark or light first screen is already painted,
         // drop even when mutation observers keep postponing settle.
         hardMaxTimer = setTimeout(function () {
             if (isDone) return;

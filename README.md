@@ -25,9 +25,9 @@ Violentmonkey 用户脚本：在网页首屏真正可见前，用跟随系统/�
 
 ## 出现 / 消失
 
-- **出现**：仅在系统深色（`prefers-color-scheme: dark`）时工作。系统浅色直接跳过。检测到 Dark Reader（`data-darkreader-mode` / `.darkreader--fallback` 等）时也跳过，已经在跑则立刻撤掉底色，不和它叠盖。系统深色且没有 Dark Reader 时，脚本按 Dark Reader 的 `document-start` 画布垫色注入一份 `style[media=screen]`：给 `html, body` 垫 `#181a1b`，不设 `color-scheme`。只垫画布，不给子节点刷色，也不盖全屏罩，所以 Discord 登录页能正常画出来。只垫 `body` 会让 Telegram 的 `html` 在慢加载时漏白。不按网站黑名单排除。
+- **出现**：仅在系统深色（`prefers-color-scheme: dark`）时工作。系统浅色直接跳过。检测到 Dark Reader（`data-darkreader-mode` / `.darkreader--fallback` 等）时也跳过，已经在跑则立刻撤掉底色，不和它叠盖。系统深色且没有 Dark Reader 时，脚本按 Dark Reader 的 `document-start` 画布垫色注入一份 `style[media=screen]`：给 `html, body` 垫一次 `#181a1b`，不设 `color-scheme`。只垫画布，不给子节点刷色，也不盖全屏罩，所以 Discord 登录页能正常画出来。垫色写好后不再每轮改写样式，避免登录态被反复重绘罩住。只垫 `body` 会让 Telegram 的 `html` 在慢加载时漏白。不按网站黑名单排除。
 - **颜色**：按页面 `class` / `data-*` / 本地存储 / `meta color-scheme` 判断；这些还没有时，等首批 CSS 读到不透明背景再对齐；再没有则跟随系统 `prefers-color-scheme`。不会在深色站点上先盖一层白，也不会在已判明的浅色站点上先盖一层黑。
-- **消失**：看见站点自己的大块深色界面（不只是 `theme-dark` 这类 class，也不只靠点选屏幕像素）就立刻撤掉垫色。检测时不关掉垫色，避免 Telegram 慢加载漏白。Arc 冻住时窗口尺寸和元素矩形可能是空的，会改用元素自己的宽高来认这块深色界面，好立刻撤垫。撤垫后不再改版心、滚动或发 `resize`：这些会把 Discord 卡在加载里。深色垫不设 `color-scheme`，也不给页面壳加 `opacity` / `filter` / `zoom` / `will-change` / `transform`。空的 SPA 壳（例如只有 `#root`、没有文案）不算首屏。判断浅色站时，等页面加载完成后再像 Dark Reader 一样短暂关掉这份样式看一次真实底色；内层已经是白底内容会马上还回浅色，不会把营销页长期染黑。若存储里已有主题但 DOM 还没跟上，最多再等约 400ms。超时只再试一次揭开：已经画出的深色首屏会撤垫；还白着的空页继续垫着。
+- **消失**：看见站点自己的大块深色界面（不只是 `theme-dark` 这类 class，也不只靠点选屏幕像素）就立刻撤掉垫色。检测时不关掉垫色，避免 Telegram 慢加载漏白。Arc 冻住时窗口尺寸和元素矩形可能是空的，会改用元素自己的宽高来认这块深色界面，好立刻撤垫。撤垫后不再改版心、滚动或发 `resize`：这些会把 Discord 卡在加载里。深色垫不设 `color-scheme`，也不给页面壳加 `opacity` / `filter` / `zoom` / `will-change` / `transform`。空的 SPA 壳（例如只有 `#root`、没有文案）不算首屏。判断浅色站时，等页面加载完成后再像 Dark Reader 一样短暂关掉这份样式看一次真实底色；内层已经是白底内容会马上还回浅色，不会把营销页长期染黑。若存储里已有主题但 DOM 还没跟上，最多再等约 400ms。超时只再试一次检测：已经画出的深色或浅色首屏会撤垫；还白着的空页继续垫着，不会像旧版全屏罩那样倒计时揭开。
 
 ## 已知限制
 
