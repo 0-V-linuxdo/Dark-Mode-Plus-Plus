@@ -2,7 +2,7 @@
 // @name         通用防白闪
 // @name:en      Anti White Flash
 // @namespace    dark-mode-plus-plus.anti-white-flash
-// @version      1.0.32
+// @version      1.0.33
 // @description  网页首屏真正可见前，按 Dark Reader 的做法只给 html/body 画布垫 #181a1b，不盖整页罩、也不给子节点刷色。看见站点自己的大块深色界面就撤垫色；检测时不关掉垫色，避免 Telegram 慢加载漏白。系统浅色或检测到 Dark Reader 时跳过。兼容 Violentmonkey，目标浏览器 Helium (Chromium)。
 // @description:en Follows Dark Reader's document-start canvas pad: colors html/body with #181a1b, without a full-page overlay or descendant paint. Drops once a large on-screen dark shell exists. Detection never disables the pad, so a slow Telegram load does not flash white. Skips on a light system theme or when Dark Reader is active. Violentmonkey / Helium (Chromium).
 // @author       Dark Mode++
@@ -24,7 +24,7 @@
     try {
         if (window.__dmppAwfActive) return;
         window.__dmppAwfActive = true;
-        window.__dmppAwfVersion = '1.0.32';
+        window.__dmppAwfVersion = '1.0.33';
     } catch (error) {}
 
     // Keep this boot path deliberately tiny and before every helper declaration.
@@ -756,11 +756,49 @@
         return shellSample;
     }
 
+    function isLightCanvasColor(color) {
+        // LinkedIn and other login walls use off-white canvases such as
+        // #f3f2ef, which fail the near-white check of r/g/b >= 245.
+        if (!color || isOwnGuardColor(color) || isDarkColor(color)) return false;
+        if (isNearWhiteColor(color)) return true;
+        if (typeof color.lightness === 'number') return color.lightness >= 0.82;
+        return color.r >= 220 && color.g >= 220 && color.b >= 220;
+    }
+
+    function rootTextIsDark() {
+        var el = document.body || document.documentElement;
+        var color;
+        if (!el || !window.getComputedStyle) return false;
+        try {
+            color = parseComputedColor(window.getComputedStyle(el).color);
+        } catch (error) {
+            return false;
+        }
+        return !!(color && isDarkColor(color));
+    }
+
+    function countNearWhiteHeaderHits() {
+        var size = viewportSize();
+        var xs = [0.16, 0.5, 0.84];
+        var y;
+        var i;
+        var painted;
+        var light = 0;
+        if (!size.vw || !size.vh) return 0;
+        y = Math.max(1, Math.floor(size.vh * 0.06));
+        for (i = 0; i < xs.length; i++) {
+            painted = opaqueBackdropAt(Math.max(1, Math.floor(size.vw * xs[i])), y);
+            if (painted && (isNearWhiteColor(painted) || isLightCanvasColor(painted))) light++;
+        }
+        return light;
+    }
+
     function isConfirmedLightPage() {
         var html = document.documentElement;
         var body = document.body;
         var sample;
         var loadedFor;
+        var headerLight;
         if (themeFromElement(html) === 'dark' || themeFromElement(body) === 'dark') return false;
         if (getStoredTheme() === 'dark') return false;
         if (!hasSubstantialContent() || !areStylesheetsReady()) return false;
@@ -772,6 +810,19 @@
         if (sample.light >= 5 && (sample.total - sample.light) <= 2 && sample.light / sample.total >= 0.75) {
             return document.readyState !== 'loading';
         }
+        // Light login walls often paint a white header and leave html/body
+        // transparent. The 16/50/84 grid then misses the header and only
+        // sees our pad through the rest of the page. Dark text plus a light
+        // header, with no dark shell, is still a light first screen.
+        headerLight = countNearWhiteHeaderHits();
+        if (
+            document.readyState !== 'loading' &&
+            sample.dark === 0 &&
+            headerLight >= 2 &&
+            rootTextIsDark()
+        ) {
+            return true;
+        }
         // Only lift the pad after the light page has actually loaded. Doing
         // this on every poll is a flicker; once is enough to see a white body.
         if (document.readyState !== 'complete') return false;
@@ -779,8 +830,10 @@
         if (loadedFor < LIGHT_PAGE_GRACE_MS) return false;
         return withGuardDisabled(function () {
             var painted = getOpaqueBackground(body) || getOpaqueBackground(html);
-            if (!painted || isOwnGuardColor(painted) || !isNearWhiteColor(painted)) return false;
-            return true;
+            if (painted && isOwnGuardColor(painted)) painted = null;
+            if (painted && isDarkColor(painted)) return false;
+            if (painted && isLightCanvasColor(painted)) return true;
+            return !painted && sample.dark === 0 && (headerLight >= 1 || rootTextIsDark());
         });
     }
 
@@ -1350,7 +1403,7 @@
         }, wait);
     }
 
-    var awfDebug = { version: '1.0.32', ticks: 0, block: '', err: '', paint: '' };
+    var awfDebug = { version: '1.0.33', ticks: 0, block: '', err: '', paint: '' };
     try { window.__dmppAwfDebug = awfDebug; } catch (error) {}
 
     function tick() {
